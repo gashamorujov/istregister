@@ -24,60 +24,50 @@ export function getUniqueCourseGroups(records) {
   }));
 }
 
-/* ── Template-matching style constants ── */
-const FILL_WHITE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
-const FILL_LIGHT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F8F9' } };
+/* ── Colors from 28.07.2026.xlsx ── */
+const WHITE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+const LIGHT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F8F9' } };
 const THIN = 'thin';
 const BLACK = { argb: 'FF000000' };
 
-function thinBorder(all = true) {
-  const s = all ? THIN : undefined;
-  return { left: { style: s, color: BLACK }, right: { style: THIN, color: BLACK }, top: { style: s || THIN, color: BLACK }, bottom: { style: THIN, color: BLACK } };
+function bAll() {
+  return { left:{style:THIN,color:BLACK}, right:{style:THIN,color:BLACK}, top:{style:THIN,color:BLACK}, bottom:{style:THIN,color:BLACK} };
+}
+function bNoLeft() {
+  return { left:{style:undefined}, right:{style:THIN,color:BLACK}, top:{style:THIN,color:BLACK}, bottom:{style:THIN,color:BLACK} };
+}
+function bNoTop() {
+  return { left:{style:THIN,color:BLACK}, right:{style:THIN,color:BLACK}, top:{style:undefined}, bottom:{style:THIN,color:BLACK} };
+}
+function bNoLeftNoTop() {
+  return { left:{style:undefined}, right:{style:THIN,color:BLACK}, top:{style:undefined}, bottom:{style:THIN,color:BLACK} };
 }
 
-function thinBorderNoTop() {
-  return { left: { style: THIN, color: BLACK }, right: { style: THIN, color: BLACK }, top: { style: undefined }, bottom: { style: THIN, color: BLACK } };
+function applyColWidths(sheet) {
+  sheet.getColumn(1).width = 14;
+  sheet.getColumn(2).width = 211.86;
+  sheet.getColumn(3).width = 54.43;
+  sheet.getColumn(4).width = 99;
+  sheet.getColumn(5).width = 53;
+  sheet.getColumn(6).width = 102.14;
+  sheet.getColumn(7).width = 8.71;
 }
 
-function thinBorderNoLeftNoTop() {
-  return { left: { style: undefined }, right: { style: THIN, color: BLACK }, top: { style: undefined }, bottom: { style: THIN, color: BLACK } };
-}
-
-function thinBorderNoLeft() {
-  return { left: { style: undefined }, right: { style: THIN, color: BLACK }, top: { style: THIN, color: BLACK }, bottom: { style: THIN, color: BLACK } };
-}
-
-function styleHeaderLabel(cell, fill) {
-  cell.font = { name: 'Arial', size: 25, bold: true };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.fill = fill;
-  cell.border = fill === FILL_WHITE ? thinBorderNoLeft() : thinBorder();
-}
-
-function styleValueCell(cell, fill) {
-  cell.font = { name: 'Arial', size: 25, bold: true };
-  cell.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
-  cell.fill = fill;
-  cell.border = fill === FILL_WHITE ? thinBorderNoLeft() : thinBorder();
-}
-
-function styleStudentNum(cell) {
-  cell.font = { name: 'Arial', size: 27, bold: true };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.border = thinBorderNoTop();
-}
-
-function styleStudentText(cell) {
-  cell.font = { name: 'Arial', size: 30, bold: false };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.border = thinBorderNoLeftNoTop();
-}
-
-function styleStudentEmpty(cell) {
-  cell.font = { name: 'Arial', size: 25, bold: false };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.fill = FILL_WHITE;
-  cell.border = thinBorder();
+/* ── Alternating row pattern ── */
+// Header/Values row: B/C=white, D/F=light, E=white
+// Student row even: ALL cells white; odd: A/B=white, C/D/E=light, F=white
+// Using formula: for row index `idx` (0-based from first student),
+// if idx % 2 == 0 (odd visual row) → standard, else → all-white
+function studentRowFill(colIdx, rowIdx) {
+  const isEven = rowIdx % 2 === 0; // 0,2,4... = odd visual rows
+  if (isEven) {
+    // Odd rows: standard template pattern
+    if (colIdx === 3 || colIdx === 4 || colIdx === 5) return LIGHT; // C, D, E
+    return WHITE; // A, B, F
+  } else {
+    // Even rows: all white (alternating effect)
+    return WHITE;
+  }
 }
 
 /* ── Main generator ── */
@@ -86,15 +76,10 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
   await workbook.xlsx.load(templateBuffer);
   const sheet = workbook.getWorksheet('Plan');
 
-  /* Req 5: un-bold the general title row (row 2, merged B2:F2) so only the
-     header-labels row (3) and the values row (4) remain bold. */
-  const titleRow = sheet.getRow(2);
-  for (let c = 1; c <= 6; c++) {
-    const cell = titleRow.getCell(c);
-    if (cell.font) cell.font = { ...cell.font, bold: false };
-  }
+  // Apply exact column widths from template
+  applyColWidths(sheet);
 
-  // Find existing content rows and delete from row 3 onward
+  // Find last data row and clear from row 3 onward
   let lastRow = sheet.rowCount;
   while (lastRow > 2) {
     const row = sheet.getRow(lastRow);
@@ -107,7 +92,6 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
   }
   if (lastRow > 2) sheet.spliceRows(3, lastRow - 2);
 
-  // Write course blocks
   const groups = groupRecordsByCourseAndDate(filteredRecords);
   let currentRow = 3;
 
@@ -122,113 +106,173 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     const teacher = entry.teacher || '';
     const dateRange = (startDate && finishDate) ? `${startDate}-${finishDate}` : (startDate || finishDate || '');
 
-    /* ── Header labels row ── */
+    /* ── Header labels row (row 3 in template) ── */
     const hdr = sheet.getRow(currentRow);
-    hdr.height = 42;
+    hdr.height = 33;
 
-    // B: Kursun adı (white fill, no left border)
     const bH = hdr.getCell(2);
     bH.value = 'Kursun adı';
-    styleHeaderLabel(bH, FILL_WHITE);
+    bH.font = { name: 'Arial', size: 25, bold: true };
+    bH.alignment = { horizontal: 'center', vertical: 'bottom' };
+    bH.fill = WHITE;
+    bH.border = bAll();
 
-    // C: Tədrisin ümumi saatı (white fill, no left border)
     const cH = hdr.getCell(3);
     cH.value = 'Tədrisin ümumi saatı';
-    styleHeaderLabel(cH, FILL_WHITE);
+    cH.font = { name: 'Arial', size: 25, bold: true };
+    cH.alignment = { horizontal: 'center', vertical: 'bottom' };
+    cH.fill = WHITE;
+    cH.border = bAll();
 
-    // D: Qrup nömrəsi (light fill — matches template F6F8F9)
     const dH = hdr.getCell(4);
     dH.value = 'Qrup nömrəsi';
-    styleHeaderLabel(dH, FILL_LIGHT);
+    dH.font = { name: 'Arial', size: 25, bold: true };
+    dH.alignment = { horizontal: 'center', vertical: 'bottom' };
+    dH.fill = LIGHT;
+    dH.border = bAll();
 
-    // E: Başlama və bitmə tarixi (light fill)
     const eH = hdr.getCell(5);
     eH.value = 'Başlama və bitmə tarixi';
-    styleHeaderLabel(eH, FILL_LIGHT);
+    eH.font = { name: 'Arial', size: 25, bold: true };
+    eH.alignment = { horizontal: 'center', vertical: 'bottom' };
+    eH.fill = LIGHT;
+    eH.border = bAll();
 
-    // F: Müəllimlər (light fill — matches template F6F8F9)
     const fH = hdr.getCell(6);
     fH.value = 'Kursu tədris edən müəllimlərin adı və soyadı';
-    styleHeaderLabel(fH, FILL_LIGHT);
+    fH.font = { name: 'Arial', size: 25, bold: true };
+    fH.alignment = { horizontal: 'center', vertical: 'bottom' };
+    fH.fill = LIGHT;
+    fH.border = bAll();
 
     currentRow++;
 
     /* ── Values row (course details) ── */
     const vRow = sheet.getRow(currentRow);
-    vRow.height = 42;
+    vRow.height = 33;
 
+    // B: course name — no fill (matches template), wrap text
     const bV = vRow.getCell(2);
     bV.value = courseName;
-    styleValueCell(bV, FILL_WHITE);
+    bV.font = { name: 'Arial', size: 25, bold: true };
+    bV.alignment = { horizontal: 'center', vertical: 'bottom', wrapText: true };
+    bV.fill = WHITE;
+    bV.border = bAll();
 
+    // C: hours — white
     const cV = vRow.getCell(3);
     cV.value = courseHours;
-    styleValueCell(cV, FILL_WHITE);
+    cV.font = { name: 'Arial', size: 25, bold: true };
+    cV.alignment = { horizontal: 'center', vertical: 'bottom' };
+    cV.fill = WHITE;
+    cV.border = bAll();
 
+    // D: group — light
     const dV = vRow.getCell(4);
     dV.value = groupNum;
-    styleValueCell(dV, FILL_LIGHT);
+    dV.font = { name: 'Arial', size: 25, bold: true };
+    dV.alignment = { horizontal: 'center', vertical: 'bottom' };
+    dV.fill = LIGHT;
+    dV.border = bAll();
 
+    // E: dates — white
     const eV = vRow.getCell(5);
     eV.value = dateRange;
-    styleValueCell(eV, FILL_WHITE);
+    eV.font = { name: 'Arial', size: 25, bold: true };
+    eV.alignment = { horizontal: 'center', vertical: 'bottom' };
+    eV.fill = WHITE;
+    eV.border = bAll();
 
+    // F: teacher — light
     const fV = vRow.getCell(6);
     fV.value = teacher;
-    styleValueCell(fV, FILL_LIGHT);
-
-    /* Req 5: course-name row (this values row) AND the row directly below it stay bold.
-       styleValueCell already sets bold:true; the header-labels row above is also bold. */
+    fV.font = { name: 'Arial', size: 25, bold: true };
+    fV.alignment = { horizontal: 'center', vertical: 'bottom' };
+    fV.fill = LIGHT;
+    fV.border = bAll();
 
     currentRow++;
 
     /* ── Student rows ── */
     students.forEach((student, idx) => {
       const sRow = sheet.getRow(currentRow);
-      sRow.height = 42;
+      sRow.height = 33;
+      const isEvenStudent = idx % 2 === 1; // alternate
 
-      // A: sequence number
-      const aCell = sRow.getCell(1);
-      aCell.value = idx + 1;
-      styleStudentNum(aCell);
+      // A: seq number
+      const a = sRow.getCell(1);
+      a.value = idx + 1;
+      a.font = { name: 'Arial', size: 27, bold: true };
+      a.alignment = { horizontal: 'center', vertical: 'bottom' };
+      a.fill = isEvenStudent ? WHITE : WHITE; // always white
+      a.border = bNoTop();
 
-      // B: full name
-      const bCell = sRow.getCell(2);
-      bCell.value = student.fullName || '';
-      styleStudentText(bCell);
+      // B: name — Arial 28 regular
+      const b = sRow.getCell(2);
+      b.value = student.fullName || '';
+      b.font = { name: 'Arial', size: 28 };
+      b.alignment = { horizontal: 'center', vertical: 'bottom' };
+      b.fill = isEvenStudent ? WHITE : WHITE;
+      b.border = bNoLeftNoTop();
 
-      // C: empty (white fill, all borders)
-      const cCell = sRow.getCell(3);
-      cCell.value = undefined;
-      styleStudentEmpty(cCell);
+      // C: empty — alternating
+      const c = sRow.getCell(3);
+      c.value = undefined;
+      c.font = { name: 'Arial', size: 28 };
+      c.alignment = { horizontal: 'center', vertical: 'bottom' };
+      c.fill = isEvenStudent ? WHITE : LIGHT;
+      c.border = bAll();
 
-      // D: rank (white / no fill — matches other columns)
-      const dCell = sRow.getCell(4);
-      dCell.value = student.rank || '';
-      styleStudentText(dCell);
+      // D: rank — Arial 28 regular, alternating
+      const d = sRow.getCell(4);
+      d.value = student.rank || '';
+      d.font = { name: 'Arial', size: 28 };
+      d.alignment = { horizontal: 'center', vertical: 'bottom' };
+      d.fill = isEvenStudent ? WHITE : LIGHT;
+      d.border = bNoLeftNoTop();
 
-      // E: empty (white fill, all borders)
-      const eCell = sRow.getCell(5);
-      eCell.value = undefined;
-      styleStudentEmpty(eCell);
+      // E: status "İlkin" — Arial 30, alternating
+      const e = sRow.getCell(5);
+      e.value = 'İlkin';
+      e.font = { name: 'Arial', size: 30 };
+      e.alignment = { horizontal: 'center', vertical: 'bottom' };
+      e.fill = isEvenStudent ? WHITE : LIGHT;
+      e.border = bAll();
 
-      // F: status "İlkin" (light fill F6F8F9 — matches template)
-      const fCell = sRow.getCell(6);
-      fCell.value = 'İlkin';
-      fCell.font = { name: 'Arial', size: 30 };
-      fCell.alignment = { horizontal: 'center', vertical: 'center' };
-      fCell.fill = FILL_LIGHT;
-      fCell.border = thinBorder();
+      // F: empty
+      const f = sRow.getCell(6);
+      f.value = undefined;
+      f.font = { name: 'Arial', size: 28 };
+      f.alignment = { horizontal: 'center', vertical: 'bottom' };
+      f.fill = isEvenStudent ? WHITE : WHITE;
+      f.border = bNoLeftNoTop();
 
       currentRow++;
     });
 
     // Empty separator row
-    const sepRow = sheet.getRow(currentRow);
-    sepRow.height = 42;
-    for (let c = 1; c <= 6; c++) sepRow.getCell(c).value = undefined;
+    const sep = sheet.getRow(currentRow);
+    sep.height = 33;
+    for (let c = 1; c <= 6; c++) sep.getCell(c).value = undefined;
     currentRow++;
   });
+
+  // Footer
+  const foot = sheet.getRow(currentRow);
+  foot.height = 33;
+  const dF = foot.getCell(4);
+  dF.value = 'Hörmətlə ';
+  dF.font = { name: 'Arial', size: 25, bold: true };
+  dF.alignment = { horizontal: 'center', vertical: 'bottom' };
+  dF.fill = WHITE;
+  dF.border = bAll();
+
+  const fF = foot.getCell(6);
+  fF.value = 'Dənizçilərin xüsusi hazırlıq üzrə təlim şöbəsi';
+  fF.font = { name: 'Arial', size: 25, bold: true };
+  fF.alignment = { horizontal: 'center', vertical: 'bottom' };
+  fF.fill = WHITE;
+  fF.border = bAll();
 
   // Download
   const buffer = await workbook.xlsx.writeBuffer();
@@ -242,4 +286,3 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-
