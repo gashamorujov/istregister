@@ -287,8 +287,6 @@ export default function SpreadsheetTable() {
           singleClickEdit={true}
           onCellValueChanged={onCellValueChanged}
           onColumnHeaderClicked={handleColumnHeaderDblClick}
-          stopEditingWhenCellsLoseFocus={true}
-          suppressCellFocus={false}
           animateRows={false}
         />
       </div>

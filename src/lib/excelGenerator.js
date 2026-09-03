@@ -168,7 +168,7 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
 
     /* ── Values row (course details) ── */
     const vRow = sheet.getRow(currentRow);
-    vRow.height = 94.5;
+    vRow.height = 42;
 
     const bV = vRow.getCell(2);
     bV.value = courseName;
