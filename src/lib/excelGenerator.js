@@ -25,6 +25,7 @@ export function getUniqueCourseGroups(records) {
 }
 
 /* ── Colors from 28.07.2026.xlsx ── */
+const NO_FILL = { type: 'pattern', pattern: 'none' };
 const WHITE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
 const LIGHT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F8F9' } };
 const THIN = 'thin';
@@ -51,23 +52,6 @@ function applyColWidths(sheet) {
   sheet.getColumn(5).width = 53;
   sheet.getColumn(6).width = 102.14;
   sheet.getColumn(7).width = 8.71;
-}
-
-/* ── Alternating row pattern ── */
-// Header/Values row: B/C=white, D/F=light, E=white
-// Student row even: ALL cells white; odd: A/B=white, C/D/E=light, F=white
-// Using formula: for row index `idx` (0-based from first student),
-// if idx % 2 == 0 (odd visual row) → standard, else → all-white
-function studentRowFill(colIdx, rowIdx) {
-  const isEven = rowIdx % 2 === 0; // 0,2,4... = odd visual rows
-  if (isEven) {
-    // Odd rows: standard template pattern
-    if (colIdx === 3 || colIdx === 4 || colIdx === 5) return LIGHT; // C, D, E
-    return WHITE; // A, B, F
-  } else {
-    // Even rows: all white (alternating effect)
-    return WHITE;
-  }
 }
 
 /* ── Main generator ── */
@@ -106,7 +90,7 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     const teacher = entry.teacher || '';
     const dateRange = (startDate && finishDate) ? `${startDate}-${finishDate}` : (startDate || finishDate || '');
 
-    /* ── Header labels row (row 3 in template) ── */
+    /* ── Header labels row ── */
     const hdr = sheet.getRow(currentRow);
     hdr.height = 33;
 
@@ -151,12 +135,12 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     const vRow = sheet.getRow(currentRow);
     vRow.height = 33;
 
-    // B: course name — no fill (matches template), wrap text
+    // B: course name — no fill (matches template pattern:"none")
     const bV = vRow.getCell(2);
     bV.value = courseName;
     bV.font = { name: 'Arial', size: 25, bold: true };
     bV.alignment = { horizontal: 'center', vertical: 'bottom', wrapText: true };
-    bV.fill = WHITE;
+    bV.fill = NO_FILL;
     bV.border = bAll();
 
     // C: hours — white
@@ -197,54 +181,53 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     students.forEach((student, idx) => {
       const sRow = sheet.getRow(currentRow);
       sRow.height = 33;
-      const isEvenStudent = idx % 2 === 1; // alternate
 
-      // A: seq number
+      // A: seq number — Arial 27pt bold, no fill, no top border
       const a = sRow.getCell(1);
       a.value = idx + 1;
       a.font = { name: 'Arial', size: 27, bold: true };
       a.alignment = { horizontal: 'center', vertical: 'bottom' };
-      a.fill = isEvenStudent ? WHITE : WHITE; // always white
+      a.fill = NO_FILL;
       a.border = bNoTop();
 
-      // B: name — Arial 28 regular
+      // B: name — Arial 28pt NOT bold, no fill
       const b = sRow.getCell(2);
       b.value = student.fullName || '';
       b.font = { name: 'Arial', size: 28 };
       b.alignment = { horizontal: 'center', vertical: 'bottom' };
-      b.fill = isEvenStudent ? WHITE : WHITE;
+      b.fill = NO_FILL;
       b.border = bNoLeftNoTop();
 
-      // C: empty — alternating
+      // C: empty — LIGHT fill always
       const c = sRow.getCell(3);
       c.value = undefined;
       c.font = { name: 'Arial', size: 28 };
       c.alignment = { horizontal: 'center', vertical: 'bottom' };
-      c.fill = isEvenStudent ? WHITE : LIGHT;
+      c.fill = LIGHT;
       c.border = bAll();
 
-      // D: empty — alternating
+      // D: Vəzifə (Rank) — Arial 30pt NOT bold, LIGHT fill always
       const d = sRow.getCell(4);
-      d.value = undefined;
-      d.font = { name: 'Arial', size: 28 };
+      d.value = student.rank || '';
+      d.font = { name: 'Arial', size: 30 };
       d.alignment = { horizontal: 'center', vertical: 'bottom' };
-      d.fill = isEvenStudent ? WHITE : LIGHT;
+      d.fill = LIGHT;
       d.border = bNoLeftNoTop();
 
-      // E: rank — NOT bold, Arial 28 regular, alternating
+      // E: İlkin — Arial 30pt NOT bold, LIGHT fill always
       const e = sRow.getCell(5);
-      e.value = student.rank || '';
-      e.font = { name: 'Arial', size: 28 };
+      e.value = 'İlkin';
+      e.font = { name: 'Arial', size: 30 };
       e.alignment = { horizontal: 'center', vertical: 'bottom' };
-      e.fill = isEvenStudent ? WHITE : LIGHT;
+      e.fill = LIGHT;
       e.border = bNoLeftNoTop();
 
-      // F: status "İlkin" — below teacher name, Arial 30, alternating
+      // F: empty — no fill
       const f = sRow.getCell(6);
-      f.value = 'İlkin';
-      f.font = { name: 'Arial', size: 30 };
+      f.value = undefined;
+      f.font = { name: 'Arial', size: 28 };
       f.alignment = { horizontal: 'center', vertical: 'bottom' };
-      f.fill = isEvenStudent ? WHITE : LIGHT;
+      f.fill = NO_FILL;
       f.border = bAll();
 
       currentRow++;
