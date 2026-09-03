@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { RowUpIcon, RowDownIcon, ClipboardIcon, DeleteIcon } from './Icons';
 
 export default function ContextMenu({ x, y, onClose, onInsertAbove, onInsertBelow, onDelete, onTrainingPlan }) {
   const ref = useRef(null);
@@ -15,18 +16,18 @@ export default function ContextMenu({ x, y, onClose, onInsertAbove, onInsertBelo
     <div ref={ref} className="context-menu" style={{ left: x, top: y }} onContextMenu={(e) => e.preventDefault()}>
       <div className="context-menu-header">Əməliyyatlar</div>
       <div className="context-menu-item" onClick={onInsertAbove}>
-        <span className="menu-icon">↑</span> Sətrin üstünə əlavə et
+        <span className="menu-icon"><RowUpIcon /></span> Sətrin üstünə əlavə et
       </div>
       <div className="context-menu-item" onClick={onInsertBelow}>
-        <span className="menu-icon">↓</span> Sətrin altına əlavə et
+        <span className="menu-icon"><RowDownIcon /></span> Sətrin altına əlavə et
       </div>
       <div className="context-menu-divider" />
       <div className="context-menu-item highlight" onClick={onTrainingPlan}>
-        <span className="menu-icon">📋</span> Training Plan
+        <span className="menu-icon"><ClipboardIcon /></span> Training Plan
       </div>
       <div className="context-menu-divider" />
       <div className="context-menu-item danger" onClick={onDelete}>
-        <span className="menu-icon">🗑</span> Sətri sil
+        <span className="menu-icon"><DeleteIcon /></span> Sətri sil
       </div>
     </div>
   );

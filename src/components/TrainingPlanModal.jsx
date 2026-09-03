@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import teachers from '../data/teachers';
+import { CloseIcon, ImportIcon } from './Icons';
 
 export default function TrainingPlanModal({ groups, onConfirm, onCancel }) {
   const [entries, setEntries] = useState({});
@@ -25,8 +26,8 @@ export default function TrainingPlanModal({ groups, onConfirm, onCancel }) {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal modal-wide" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>📋 Training Plan — Yükləmə</h2>
-          <button className="modal-close" onClick={onCancel}>✕</button>
+          <h2>Training Plan - Yükləmə</h2>
+          <button className="modal-close" onClick={onCancel} aria-label="Bağla"><CloseIcon /></button>
         </div>
         <div className="modal-body">
           <p className="modal-info">
@@ -76,10 +77,11 @@ export default function TrainingPlanModal({ groups, onConfirm, onCancel }) {
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onCancel}>Ləğv</button>
           <button className="btn-primary" disabled={!allValid} onClick={handleConfirm}>
-            📥 Yüklə (Excel)
+            <ImportIcon /> Yüklə (Excel)
           </button>
         </div>
       </div>
     </div>
   );
 }
+

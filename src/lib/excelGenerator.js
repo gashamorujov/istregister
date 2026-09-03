@@ -85,6 +85,14 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
   await workbook.xlsx.load(templateBuffer);
   const sheet = workbook.getWorksheet('Plan');
 
+  /* Req 5: un-bold the general title row (row 2, merged B2:F2) so only the
+     header-labels row (3) and the values row (4) remain bold. */
+  const titleRow = sheet.getRow(2);
+  for (let c = 1; c <= 6; c++) {
+    const cell = titleRow.getCell(c);
+    if (cell.font) cell.font = { ...cell.font, bold: false };
+  }
+
   // Find existing content rows and delete from row 3 onward
   let lastRow = sheet.rowCount;
   while (lastRow > 2) {

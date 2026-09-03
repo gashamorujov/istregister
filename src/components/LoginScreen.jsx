@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FolderIcon } from './Icons';
 
 export default function LoginScreen({ onLogin, hasAccess }) {
   const [code, setCode] = useState('');
@@ -13,7 +14,7 @@ export default function LoginScreen({ onLogin, hasAccess }) {
   return (
     <div className="login-screen">
       <div className="login-card">
-        <div className="login-logo">🗂️</div>
+        <div className="login-logo"><FolderIcon /></div>
         <h1>İSTREGISTER</h1>
         <p className="login-sub">Tədris Reyestri İdarəetmə Sistemi</p>
 
@@ -37,3 +38,4 @@ export default function LoginScreen({ onLogin, hasAccess }) {
     </div>
   );
 }
+

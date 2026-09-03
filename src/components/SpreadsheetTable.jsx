@@ -9,7 +9,12 @@ import ContextMenu from './ContextMenu';
 import FilterPanel from './FilterPanel';
 import TrainingPlanModal from './TrainingPlanModal';
 import ImportExcelModal from './ImportExcelModal';
+import GridHeader from './GridHeader';
 import { getUniqueCourseGroups, generateTrainingPlan } from '../lib/excelGenerator';
+import {
+  SearchIcon, CloseIcon, UndoIcon, RedoIcon, ResetFilterIcon,
+  AddRowIcon, DeleteIcon, ImportIcon, WarningIcon,
+} from './Icons';
 
 function createEmptyRow(idx) {
   return {
@@ -62,13 +67,9 @@ const COL_LABELS = {
   finishDate: 'Bitmə tarixi', note: 'Qeyd', date: 'Tarix',
 };
 
-// Fields shown in the quick (synchronous) filter bar
-const QUICK_FILTER_FIELDS = ['courseCode', 'rank', 'rank2', 'startDate', 'finishDate'];
-
 export default function SpreadsheetTable() {
   const [rowData, setRowData] = useState(() => getInitialState());
   const [searchText, setSearchText] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
   const [menuState, setMenuState] = useState(null);
   const [activeFilterColumn, setActiveFilterColumn] = useState(null);
@@ -77,14 +78,11 @@ export default function SpreadsheetTable() {
   const [modalGroups, setModalGroups] = useState([]);
   const [filteredForTemplate, setFilteredForTemplate] = useState([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const gridRef = useRef(null);
   const touchTimer = useRef(null);
   const currentRef = useRef(rowData);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchText), 250);
-    return () => clearTimeout(t);
-  }, [searchText]);
+  const activeFilterRef = useRef({ value: new Set() });
 
   const filteredData = useMemo(() => {
     let data = rowData;
@@ -97,14 +95,14 @@ export default function SpreadsheetTable() {
         })
       );
     }
-    if (debouncedSearch.trim()) {
-      const q = debouncedSearch.toLowerCase().trim();
+    if (searchText.trim()) {
+      const q = searchText.toLowerCase().trim();
       data = data.filter(row =>
         Object.values(row).some(v => String(v || '').toLowerCase().includes(q))
       );
     }
     return data;
-  }, [rowData, columnFilters, debouncedSearch]);
+  }, [rowData, columnFilters, searchText]);
 
   const pushHistory = useCallback(() => {
     setHistory(prev => ({ past: [...prev.past.slice(-99), [...currentRef.current]], future: [] }));
@@ -135,6 +133,12 @@ export default function SpreadsheetTable() {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [undo, redo]);
+
+  // Keep header filter-icon active state in sync and refresh headers.
+  useEffect(() => {
+    activeFilterRef.current.value = new Set(Object.keys(columnFilters));
+    gridRef.current?.api?.refreshHeader?.();
+  }, [columnFilters]);
 
   const onCellValueChanged = useCallback((event) => {
     const { data, colDef, newValue } = event;
@@ -181,18 +185,63 @@ export default function SpreadsheetTable() {
     setHistory(prev => ({ past: [...prev.past.slice(-99), [...renumbered]], future: [] }));
   }, [menuState, pushHistory]);
 
-  const deleteRow = useCallback(() => {
-    if (!menuState) return;
+  // Append a brand-new empty row at the end, then focus its first editable cell
+  const appendRow = useCallback(() => {
+    pushHistory();
+    const empty = createEmptyRow(0);
+    const newRows = renumber([...currentRef.current, empty]);
+    currentRef.current = newRows; setRowData(newRows);
+    setHistory(prev => ({ past: [...prev.past.slice(-99), [...newRows]], future: [] }));
+    setTimeout(() => {
+      const api = gridRef.current?.api;
+      const node = api?.getRowNode(empty._id);
+      if (!node) return;
+      api.startEditingCell({ rowIndex: node.rowIndex, colKey: 'fullName' });
+    }, 60);
+  }, [pushHistory]);
+
+  // Open the delete confirmation dialog for a specific row index
+  const requestDelete = useCallback((rowIndex) => {
+    const api = gridRef.current?.api;
+    let row = null;
+    if (api) {
+      api.forEachNode(n => { if (n.rowIndex === rowIndex && !row) row = n.data; });
+    }
+    setConfirmDelete({
+      rowIndex,
+      name: row && row.fullName ? String(row.fullName) : '',
+    });
+  }, []);
+
+  const confirmDeleteRow = useCallback(() => {
+    if (!confirmDelete) return;
     pushHistory();
     const newRows = [...currentRef.current];
-    if (menuState.rowIndex >= 0 && menuState.rowIndex < newRows.length) {
-      newRows.splice(menuState.rowIndex, 1);
+    if (confirmDelete.rowIndex >= 0 && confirmDelete.rowIndex < newRows.length) {
+      newRows.splice(confirmDelete.rowIndex, 1);
       const renumbered = renumber(newRows);
       currentRef.current = renumbered; setRowData(renumbered);
     }
-    setMenuState(null);
+    setConfirmDelete(null);
     setHistory(prev => ({ past: [...prev.past.slice(-99), [...currentRef.current]], future: [] }));
-  }, [menuState, pushHistory]);
+  }, [confirmDelete, pushHistory]);
+
+  const onSelectionChanged = useCallback((event) => {
+    const api = event.api;
+    const sel = api.getSelectedRows();
+    setSelectedIds(new Set(sel.map(r => r._id)));
+  }, []);
+
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const deleteSelectedRow = useCallback(() => {
+    const api = gridRef.current?.api;
+    if (!api) return;
+    const sel = api.getSelectedRows();
+    if (sel.length === 0) { alert('Silinəcək sətri seçin.'); return; }
+    const node = api.getRowNode(sel[0]._id);
+    requestDelete(node ? node.rowIndex : -1);
+  }, [requestDelete]);
 
   const handleTrainingPlan = useCallback(() => {
     setMenuState(null);
@@ -235,33 +284,54 @@ export default function SpreadsheetTable() {
     setActiveFilterColumn(null);
   }, []);
 
-  // Quick (synchronous) filter: single selected value per field, applied immediately on change
-  const handleQuickFilterChange = useCallback((field, value) => {
-    setColumnFilters(prev => {
-      const next = { ...prev };
-      if (value) next[field] = [value]; else delete next[field];
-      return next;
-    });
-  }, []);
-
   const resetFilters = useCallback(() => {
     setColumnFilters({});
     setActiveFilterColumn(null);
   }, []);
 
-  const getUniqueValues = useCallback((field) => {
+  // Synchronized unique values: computed from data filtered by ALL OTHER columns
+  // (excluding the current field), so options cascade sequentially.
+  const getSynchronizedValues = useCallback((field) => {
+    const af = Object.entries(columnFilters).filter(([f]) => f !== field);
+    let data = rowData;
+    if (af.length > 0) {
+      data = data.filter(row =>
+        af.every(([f, vals]) => {
+          if (!vals || vals.length === 0) return true;
+          return vals.some(v => String(row[f] || '').toLowerCase().includes(v.toLowerCase()));
+        })
+      );
+    }
     const vals = new Set();
-    rowData.forEach(r => { const v = r[field]; if (v) vals.add(String(v)); });
+    data.forEach(r => { const v = r[field]; if (v) vals.add(String(v)); });
     return Array.from(vals).sort();
-  }, [rowData]);
+  }, [rowData, columnFilters]);
 
-  const handleColumnHeaderDblClick = useCallback((event) => {
-    const colId = event.column?.getId?.();
+  const openFilterForColumn = useCallback((colId) => {
+    if (colId && colId !== '_no') setActiveFilterColumn(colId);
+  }, []);
+
+  const headerParams = useMemo(() => ({
+    onOpenFilter: openFilterForColumn,
+    activeRef: activeFilterRef,
+  }), [openFilterForColumn]);
+
+  const handleHeaderDoubleClick = useCallback((event) => {
+    const colId = event.column?.getColId?.();
     if (colId && colId !== '_no') setActiveFilterColumn(colId);
   }, []);
 
   const canUndo = history.past.length > 0;
   const canRedo = history.future.length > 0;
+
+  const makeCol = (field, cfg = {}) => ({
+    field,
+    headerName: COL_LABELS[field],
+    editable: true,
+    headerComponent: GridHeader,
+    headerComponentParams: headerParams,
+    ...cfg,
+  });
 
   const columnDefs = useMemo(() => [
     {
@@ -269,21 +339,21 @@ export default function SpreadsheetTable() {
       editable: true, pinned: 'left', suppressMovable: true,
       cellClass: 'cell-center cell-no', headerClass: 'header-no',
     },
-    { field: 'fullName', headerName: COL_LABELS.fullName, width: 260, minWidth: 150, editable: true },
-    { field: 'serial', headerName: COL_LABELS.serial, width: 120, minWidth: 90, editable: true },
-    { field: 'idNumber', headerName: COL_LABELS.idNumber, width: 130, minWidth: 100, editable: true },
-    { field: 'birthDate', headerName: COL_LABELS.birthDate, width: 110, minWidth: 90, editable: true },
-    { field: 'phone', headerName: COL_LABELS.phone, width: 175, minWidth: 120, editable: true },
-    { field: 'email', headerName: COL_LABELS.email, width: 260, minWidth: 180, editable: true },
-    { field: 'rank', headerName: COL_LABELS.rank, width: 200, minWidth: 140, editable: true },
-    { field: 'fullNameId', headerName: COL_LABELS.fullNameId, width: 260, minWidth: 150, editable: true },
-    { field: 'rank2', headerName: COL_LABELS.rank2, width: 160, minWidth: 120, editable: true },
-    { field: 'courseCode', headerName: COL_LABELS.courseCode, width: 110, minWidth: 80, editable: true },
-    { field: 'startDate', headerName: COL_LABELS.startDate, width: 130, minWidth: 100, editable: true },
-    { field: 'finishDate', headerName: COL_LABELS.finishDate, width: 130, minWidth: 100, editable: true },
-    { field: 'note', headerName: COL_LABELS.note, width: 140, minWidth: 100, editable: true },
-    { field: 'date', headerName: COL_LABELS.date, width: 120, minWidth: 90, editable: true },
-  ], []);
+    makeCol('fullName', { width: 260, minWidth: 150 }),
+    makeCol('serial', { width: 120, minWidth: 90 }),
+    makeCol('idNumber', { width: 130, minWidth: 100 }),
+    makeCol('birthDate', { width: 110, minWidth: 90 }),
+    makeCol('phone', { width: 175, minWidth: 120 }),
+    makeCol('email', { width: 260, minWidth: 180 }),
+    makeCol('rank', { width: 200, minWidth: 140 }),
+    makeCol('fullNameId', { width: 260, minWidth: 150 }),
+    makeCol('rank2', { width: 160, minWidth: 120 }),
+    makeCol('courseCode', { width: 110, minWidth: 80 }),
+    makeCol('startDate', { width: 130, minWidth: 100 }),
+    makeCol('finishDate', { width: 130, minWidth: 100 }),
+    makeCol('note', { width: 140, minWidth: 100 }),
+    makeCol('date', { width: 120, minWidth: 90 }),
+  ], [headerParams]);
 
   const defaultColDef = useMemo(() => ({
     sortable: false, resizable: true, filter: false, suppressMovable: true, suppressMenu: true,
@@ -293,45 +363,42 @@ export default function SpreadsheetTable() {
     <div className="spreadsheet-root">
       <div className="toolbar">
         <div className="toolbar-left">
-          <div className="search-box">
-            <span className="search-icon">🔍</span>
-            <input type="text" className="search-input" placeholder="Axtar..." value={searchText} onChange={(e) => setSearchText(e.target.value)} />
-            {searchText && <button className="search-clear" onClick={() => setSearchText('')}>✕</button>}
+          <div className="row-actions">
+            <button className="btn-row-action add" onClick={appendRow} title="Sonda yeni sətir əlavə et">
+              <AddRowIcon /> Sətir əlavə et
+            </button>
+            <button className="btn-row-action delete" onClick={deleteSelectedRow} disabled={selectedIds.size === 0} title="Seçilmiş sətri sil">
+              <DeleteIcon /> Sil
+            </button>
           </div>
-        </div>
-        <div className="toolbar-center">
-          <div className="undo-redo-group">
-            <button className="btn-toolbar" onClick={undo} disabled={!canUndo} title="Geri (Ctrl+Z)">↩</button>
-            <button className="btn-toolbar" onClick={redo} disabled={!canRedo} title="İrəli (Ctrl+Y)">↪</button>
-          </div>
-        </div>
-        <div className="toolbar-right">
           <span className="row-count">{filteredData.length} / {rowData.length} sətir</span>
-          <button className="btn-import" onClick={() => setImportOpen(true)} title="Excel-dən yeni məlumat idxal et">📥 Import Excel</button>
-          {Object.keys(columnFilters).length > 0 && (
-            <button className="btn-clear-filters" onClick={resetFilters}>✕ Filtri təmizlə</button>
-          )}
         </div>
-      </div>
 
-      <div className="filter-bar">
-        <span className="filter-bar-label">🔎 Filtrlər</span>
-        {QUICK_FILTER_FIELDS.map(field => (
-          <div className="filter-field" key={field}>
-            <span className="filter-field-label">{COL_LABELS[field] || field}</span>
-            <select
-              className={`filter-select ${columnFilters[field] ? 'has-value' : ''}`}
-              value={(columnFilters[field] && columnFilters[field][0]) || ''}
-              onChange={(e) => handleQuickFilterChange(field, e.target.value)}
-            >
-              <option value="">Hamısı</option>
-              {getUniqueValues(field).map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+        <div className="toolbar-center">
+          <div className="search-box">
+            <span className="search-icon"><SearchIcon /></span>
+            <input type="text" className="search-input" placeholder="Axtar..." value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+            {searchText && <button className="search-clear" onClick={() => setSearchText('')} aria-label="Axtarışı təmizlə"><CloseIcon /></button>}
           </div>
-        ))}
-        <button className="btn-reset-filters" onClick={resetFilters} disabled={Object.keys(columnFilters).length === 0}>⟲ Reset</button>
+        </div>
+
+        <div className="toolbar-right">
+          <div className="control-group">
+            <button className="btn-control" onClick={undo} disabled={!canUndo} title="Geri (Ctrl+Z)"><UndoIcon /></button>
+            <button className="btn-control" onClick={redo} disabled={!canRedo} title="İrəli (Ctrl+Y)"><RedoIcon /></button>
+            <button
+              className={`btn-control reset ${Object.keys(columnFilters).length > 0 ? 'active' : ''}`}
+              onClick={resetFilters}
+              disabled={Object.keys(columnFilters).length === 0}
+              title="Filtirləri sıfırla"
+            >
+              <ResetFilterIcon />
+            </button>
+            <button className="btn-control import" onClick={() => setImportOpen(true)} title="Excel-dən yeni məlumat idxal et">
+              <ImportIcon /> Import
+            </button>
+          </div>
+        </div>
       </div>
 
       {Object.keys(columnFilters).length > 0 && (
@@ -339,7 +406,9 @@ export default function SpreadsheetTable() {
           {Object.entries(columnFilters).map(([field, values]) => (
             <span className="filter-chip" key={field}>
               {COL_LABELS[field] || field}: {values.length}
-              <button onClick={() => setColumnFilters(prev => { const n = { ...prev }; delete n[field]; return n; })}>✕</button>
+              <button onClick={() => setColumnFilters(prev => { const n = { ...prev }; delete n[field]; return n; })} aria-label={`${field} filtrini sil`}>
+                <CloseIcon />
+              </button>
             </span>
           ))}
         </div>
@@ -359,11 +428,14 @@ export default function SpreadsheetTable() {
           modules={[ClientSideRowModelModule]}
           enableCellTextSelection={true}
           rowHeight={40}
-          headerHeight={42}
+          headerHeight={44}
           suppressRowHoverHighlight={false}
           singleClickEdit={true}
+          stopEditingWhenCellsLoseFocus={true}
+          rowSelection={{ mode: 'single' }}
+          onSelectionChanged={onSelectionChanged}
           onCellValueChanged={onCellValueChanged}
-          onColumnHeaderClicked={handleColumnHeaderDblClick}
+          onColumnHeaderDoubleClicked={handleHeaderDoubleClick}
           animateRows={false}
         />
       </div>
@@ -374,7 +446,7 @@ export default function SpreadsheetTable() {
           onClose={() => setMenuState(null)}
           onInsertAbove={() => insertRow('above')}
           onInsertBelow={() => insertRow('below')}
-          onDelete={deleteRow}
+          onDelete={() => requestDelete(menuState.rowIndex)}
           onTrainingPlan={handleTrainingPlan}
         />
       )}
@@ -383,11 +455,31 @@ export default function SpreadsheetTable() {
         <FilterPanel
           field={activeFilterColumn}
           headerName={COL_LABELS[activeFilterColumn] || activeFilterColumn}
-          values={getUniqueValues(activeFilterColumn)}
+          values={getSynchronizedValues(activeFilterColumn)}
           selected={columnFilters[activeFilterColumn] || []}
           onApply={handleFilterApply}
           onClose={() => setActiveFilterColumn(null)}
         />
+      )}
+
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
+            <div className="confirm-body">
+              <div className="confirm-icon"><WarningIcon /></div>
+              <div className="confirm-title">Sətir silinsin?</div>
+              <div className="confirm-message">
+                {confirmDelete.name
+                  ? `"${confirmDelete.name}" məlumatı silinəcək.`
+                  : 'Bu sətir tamamilə silinəcək.'} Bu əməliyyat geri alına bilər (Ctrl+Z).
+              </div>
+            </div>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Ləğv et</button>
+              <button className="btn btn-danger" onClick={confirmDeleteRow}>Sil</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {modalOpen && (
@@ -408,4 +500,3 @@ export default function SpreadsheetTable() {
     </div>
   );
 }
-

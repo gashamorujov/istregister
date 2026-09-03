@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { CloseIcon } from './Icons';
 
 export default function FilterPanel({ field, headerName, values, selected, onApply, onClose }) {
   const [searchText, setSearchText] = useState('');
@@ -34,7 +35,7 @@ export default function FilterPanel({ field, headerName, values, selected, onApp
       <div className="filter-panel" ref={ref}>
         <div className="filter-header">
           <h3>{headerName}</h3>
-          <button className="filter-close" onClick={onClose}>✕</button>
+          <button className="filter-close" onClick={onClose} aria-label="Bağla"><CloseIcon /></button>
         </div>
         <div className="filter-search">
           <input
@@ -72,3 +73,4 @@ export default function FilterPanel({ field, headerName, values, selected, onApp
     </div>
   );
 }
+

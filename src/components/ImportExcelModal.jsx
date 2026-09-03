@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { IMPORT_FIELDS } from './SpreadsheetTable';
+import { CloseIcon, DocIcon, CheckIcon } from './Icons';
 
 function rowKey(row) {
   return [row.fullName, row.serial, row.idNumber, row.courseCode]
@@ -120,8 +121,8 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal" style={{ maxWidth: 820 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>📥 Excel Import</h2>
-          <button className="modal-close" onClick={onCancel}>✕</button>
+          <h2>Excel Import</h2>
+          <button className="modal-close" onClick={onCancel} aria-label="Bağla"><CloseIcon /></button>
         </div>
         <div className="modal-body">
           {!previewRows ? (
@@ -133,7 +134,7 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
               >
-                <div className="import-dropzone-icon">📄</div>
+                <div className="import-dropzone-icon"><DocIcon /></div>
                 <div className="import-dropzone-text">Excel faylı seçin və ya buraya sürükləyin</div>
                 <div className="import-dropzone-sub">.xlsx formatında — yalnız yeni məlumatlar əlavə olunur</div>
                 <input
@@ -144,8 +145,8 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
                   onChange={(e) => handleFile(e.target.files?.[0])}
                 />
               </div>
-              {fileName && <div className="import-file-name">✓ {fileName}</div>}
-              {error && <div className="import-parse-error">⚠️ {error}</div>}
+              {fileName && <div className="import-file-name"><CheckIcon /> {fileName}</div>}
+              {error && <div className="import-parse-error"><CloseIcon /> {error}</div>}
             </>
           ) : (
             <>
@@ -199,7 +200,7 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
           </button>
           {previewRows && (
             <button className="btn-primary" disabled={newCount === 0} onClick={handleConfirm}>
-              ✅ Təsdiqlə ({newCount})
+              <CheckIcon /> Təsdiqlə ({newCount})
             </button>
           )}
         </div>

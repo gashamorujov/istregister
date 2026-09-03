@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { CloseIcon } from './Icons';
 
 const DEFAULT_CODE = '0706';
 
@@ -19,11 +20,13 @@ export default function AdminPanel({ onClose }) {
   const [newCode, setNewCode] = useState('');
   const [confirmCode, setConfirmCode] = useState('');
   const [msg, setMsg] = useState('');
+  const [msgOk, setMsgOk] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSave = (e) => {
     e.preventDefault();
     setMsg('');
+    setMsgOk(false);
 
     if (currentCode !== getCode()) {
       setMsg('Cari kod yanlışdır.');
@@ -41,7 +44,8 @@ export default function AdminPanel({ onClose }) {
     setLoading(true);
     setTimeout(() => {
       setCode(newCode);
-      setMsg('✅ Kod uğurla dəyişdirildi.');
+      setMsg('Kod uğurla dəyişdirildi.');
+      setMsgOk(true);
       setCurrentCode('');
       setNewCode('');
       setConfirmCode('');
@@ -53,8 +57,8 @@ export default function AdminPanel({ onClose }) {
     <div className="admin-overlay" onClick={onClose}>
       <div className="admin-panel" onClick={(e) => e.stopPropagation()}>
         <div className="admin-header">
-          <h2>⚙️ Admin Panel</h2>
-          <button className="admin-close" onClick={onClose}>✕</button>
+          <h2>Admin Panel</h2>
+          <button className="admin-close" onClick={onClose} aria-label="Bağla"><CloseIcon /></button>
         </div>
 
         <form className="admin-form" onSubmit={handleSave}>
@@ -89,7 +93,7 @@ export default function AdminPanel({ onClose }) {
             onChange={(e) => setConfirmCode(e.target.value)}
           />
 
-          {msg && <div className={`admin-msg ${msg.startsWith('✅') ? 'ok' : 'err'}`}>{msg}</div>}
+          {msg && <div className={`admin-msg ${msgOk ? 'ok' : 'err'}`}>{msg}</div>}
 
           <button className="btn-admin-save" type="submit" disabled={loading}>
             {loading ? 'Yadda saxlanılır...' : 'Kodu dəyişdir'}
@@ -99,3 +103,4 @@ export default function AdminPanel({ onClose }) {
     </div>
   );
 }
+
