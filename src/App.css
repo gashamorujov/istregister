@@ -122,8 +122,6 @@ html, body, #root {
 .ag-theme-quartz .ag-row:hover { background-color: var(--row-hover) !important; }
 .ag-theme-quartz .ag-cell { padding: 0 8px; line-height: 36px; border-right: 1px solid #f1f5f9; }
 
-.cell-readonly { background: var(--header-bg); color: var(--text-muted); cursor: default; }
-.cell-readonly::selection { background: transparent; }
 .cell-center { text-align: center; }
 .cell-no { font-weight: 600; color: var(--primary); background: var(--header-bg); border-right: 1px solid var(--border-strong) !important; }
 .header-no { font-weight: 700; color: var(--primary); background: var(--primary-light) !important; }

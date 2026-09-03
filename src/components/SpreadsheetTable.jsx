@@ -210,8 +210,8 @@ export default function SpreadsheetTable() {
   const columnDefs = useMemo(() => [
     {
       field: '_no', headerName: '№', width: 55, minWidth: 55, maxWidth: 55,
-      editable: false, pinned: 'left', suppressMovable: true,
-      cellClass: 'cell-readonly cell-center cell-no', headerClass: 'header-no',
+      editable: true, pinned: 'left', suppressMovable: true,
+      cellClass: 'cell-center cell-no', headerClass: 'header-no',
     },
     { field: 'fullName', headerName: COL_LABELS.fullName, width: 260, minWidth: 150, editable: true },
     { field: 'serial', headerName: COL_LABELS.serial, width: 120, minWidth: 90, editable: true },
@@ -220,10 +220,7 @@ export default function SpreadsheetTable() {
     { field: 'phone', headerName: COL_LABELS.phone, width: 175, minWidth: 120, editable: true },
     { field: 'email', headerName: COL_LABELS.email, width: 260, minWidth: 180, editable: true },
     { field: 'rank', headerName: COL_LABELS.rank, width: 200, minWidth: 140, editable: true },
-    {
-      field: 'fullNameId', headerName: COL_LABELS.fullNameId, width: 260, minWidth: 150,
-      editable: false, cellClass: 'cell-readonly', suppressMovable: true,
-    },
+    { field: 'fullNameId', headerName: COL_LABELS.fullNameId, width: 260, minWidth: 150, editable: true },
     { field: 'rank2', headerName: COL_LABELS.rank2, width: 160, minWidth: 120, editable: true },
     { field: 'courseCode', headerName: COL_LABELS.courseCode, width: 110, minWidth: 80, editable: true },
     { field: 'startDate', headerName: COL_LABELS.startDate, width: 130, minWidth: 100, editable: true },
