@@ -223,29 +223,29 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
       c.fill = isEvenStudent ? WHITE : LIGHT;
       c.border = bAll();
 
-      // D: rank — Arial 28 regular, alternating
+      // D: empty — alternating
       const d = sRow.getCell(4);
-      d.value = student.rank || '';
+      d.value = undefined;
       d.font = { name: 'Arial', size: 28 };
       d.alignment = { horizontal: 'center', vertical: 'bottom' };
       d.fill = isEvenStudent ? WHITE : LIGHT;
       d.border = bNoLeftNoTop();
 
-      // E: status "İlkin" — Arial 30, alternating
+      // E: rank — NOT bold, Arial 28 regular, alternating
       const e = sRow.getCell(5);
-      e.value = 'İlkin';
-      e.font = { name: 'Arial', size: 30 };
+      e.value = student.rank || '';
+      e.font = { name: 'Arial', size: 28 };
       e.alignment = { horizontal: 'center', vertical: 'bottom' };
       e.fill = isEvenStudent ? WHITE : LIGHT;
-      e.border = bAll();
+      e.border = bNoLeftNoTop();
 
-      // F: empty
+      // F: status "İlkin" — below teacher name, Arial 30, alternating
       const f = sRow.getCell(6);
-      f.value = undefined;
-      f.font = { name: 'Arial', size: 28 };
+      f.value = 'İlkin';
+      f.font = { name: 'Arial', size: 30 };
       f.alignment = { horizontal: 'center', vertical: 'bottom' };
-      f.fill = isEvenStudent ? WHITE : WHITE;
-      f.border = bNoLeftNoTop();
+      f.fill = isEvenStudent ? WHITE : LIGHT;
+      f.border = bAll();
 
       currentRow++;
     });
