@@ -316,30 +316,8 @@ html, body, #root {
 .btn-login:hover { background: var(--primary-dark); }
 .btn-login:active { transform: scale(0.98); }
 
-.login-admin-line {
-  margin-top: 16px;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
 
-.btn-admin-access {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--header-bg);
-  color: var(--header-text);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
 
-.btn-admin-access:hover {
-  background: var(--primary-light);
-  border-color: var(--primary);
-  color: var(--primary);
-}
 
 /* Admin Panel button in header */
 .btn-admin-panel {

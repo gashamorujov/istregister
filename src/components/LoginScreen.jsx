@@ -33,11 +33,6 @@ export default function LoginScreen({ onLogin, hasAccess }) {
 
         <button className="btn-login" onClick={handleSubmit}>Giriş</button>
 
-        <div className="login-admin-line">
-          <button className="btn-admin-access" onClick={() => onLogin('__ADMIN__')}>
-            Admin Panel
-          </button>
-        </div>
       </div>
     </div>
   );
