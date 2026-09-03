@@ -1,5 +1,3 @@
-// Kurs kodları, adları və saatları - sabit lüğət
-// Course codes, names and hours dictionary
 const courses = {
   SK: { name: 'Gəmi sürücülərinin təkmilləşdirməsi kursu', hours: 160 },
   SH: { name: 'Gəmidə ilk tibbi yardım', hours: 34 },
@@ -30,11 +28,11 @@ const courses = {
   DL: { name: 'Dalğıc hazırlıq kursu', hours: 40 },
   SJ: { name: 'Kran maşinisti hazırlıq kursu', hours: 64 },
   SU: { name: 'Sürətli xilasetmə qayıqlar üzrə mütəxəssis', hours: 20 },
+  WS: { name: 'Yükləmə əməliyyatları hazırlıq kursu', hours: 32 },
+  XS: { name: 'Xüsusi hazırlıq kursu', hours: 24 },
 };
 
 export const getCourseName = (code) => courses[code]?.name || 'Ad təyin olunmayıb';
 export const getCourseHours = (code) => courses[code]?.hours || 0;
 export const getCourseInfo = (code) => courses[code] || { name: 'Ad təyin olunmayıb', hours: 0 };
-export const getAllCourseCodes = () => Object.keys(courses);
-
 export default courses;

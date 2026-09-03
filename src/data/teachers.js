@@ -1,4 +1,3 @@
-// Müəllimlərin siyahısı - sabit dropdown/select siyahısı
 const teachers = [
   'Ağalar Qafar',
   'Bayramov Azad',
@@ -13,5 +12,4 @@ const teachers = [
   'Tərlan Məmmədov',
   'Elçin Əliyev',
 ];
-
 export default teachers;
