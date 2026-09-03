@@ -284,7 +284,6 @@ export default function SpreadsheetTable() {
           rowHeight={36}
           headerHeight={40}
           suppressRowHoverHighlight={false}
-          editType="fullRow"
           singleClickEdit={true}
           onCellValueChanged={onCellValueChanged}
           onColumnHeaderClicked={handleColumnHeaderDblClick}
