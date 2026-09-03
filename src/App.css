@@ -207,21 +207,6 @@ html, body, #root {
   font-size: 13.5px;
 }
 
-/* Header filter icon button */
-.header-filter-wrap {
-  display: flex; align-items: center; justify-content: center; gap: 5px; height: 100%;
-}
-.header-label-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.header-filter-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border: none; background: transparent; color: var(--text-muted);
-  cursor: pointer; border-radius: 4px; padding: 0; opacity: 0.4; flex-shrink: 0; transition: all 0.15s;
-  position: relative;
-}
-.header-filter-btn svg { width: 14px; height: 14px; }
-.header-filter-btn:hover { opacity: 1; color: var(--primary); background: var(--primary-light); }
-.header-filter-btn.active { opacity: 1; color: white; background: var(--primary); }
-
 /* Readability: vertical centering + comfortable text */
 .ag-theme-quartz .ag-cell.ag-cell-wrap-text { line-height: 1.35; display: flex; align-items: center; }
 

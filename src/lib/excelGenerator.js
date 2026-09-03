@@ -61,19 +61,19 @@ function styleValueCell(cell, fill) {
 }
 
 function styleStudentNum(cell) {
-  cell.font = { name: 'Arial', size: 27, bold: true };
+  cell.font = { name: 'Arial', size: 27, bold: false };
   cell.alignment = { horizontal: 'center', vertical: 'center' };
   cell.border = thinBorderNoTop();
 }
 
 function styleStudentText(cell) {
-  cell.font = { name: 'Arial', size: 30 };
+  cell.font = { name: 'Arial', size: 30, bold: false };
   cell.alignment = { horizontal: 'center', vertical: 'center' };
   cell.border = thinBorderNoLeftNoTop();
 }
 
 function styleStudentEmpty(cell) {
-  cell.font = { name: 'Arial', size: 25, bold: true };
+  cell.font = { name: 'Arial', size: 25, bold: false };
   cell.alignment = { horizontal: 'center', vertical: 'center' };
   cell.fill = FILL_WHITE;
   cell.border = thinBorder();

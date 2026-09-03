@@ -9,7 +9,6 @@ import ContextMenu from './ContextMenu';
 import FilterPanel from './FilterPanel';
 import TrainingPlanModal from './TrainingPlanModal';
 import ImportExcelModal from './ImportExcelModal';
-import GridHeader from './GridHeader';
 import { getUniqueCourseGroups, generateTrainingPlan } from '../lib/excelGenerator';
 import {
   SearchIcon, CloseIcon, UndoIcon, RedoIcon, ResetFilterIcon,
@@ -82,7 +81,6 @@ export default function SpreadsheetTable() {
   const gridRef = useRef(null);
   const touchTimer = useRef(null);
   const currentRef = useRef(rowData);
-  const activeFilterRef = useRef({ value: new Set() });
 
   const filteredData = useMemo(() => {
     let data = rowData;
@@ -133,12 +131,6 @@ export default function SpreadsheetTable() {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [undo, redo]);
-
-  // Keep header filter-icon active state in sync and refresh headers.
-  useEffect(() => {
-    activeFilterRef.current.value = new Set(Object.keys(columnFilters));
-    gridRef.current?.api?.refreshHeader?.();
-  }, [columnFilters]);
 
   const onCellValueChanged = useCallback((event) => {
     const { data, colDef, newValue } = event;
@@ -307,16 +299,8 @@ export default function SpreadsheetTable() {
     return Array.from(vals).sort();
   }, [rowData, columnFilters]);
 
-  const openFilterForColumn = useCallback((colId) => {
-    if (colId && colId !== '_no') setActiveFilterColumn(colId);
-  }, []);
-
-  const headerParams = useMemo(() => ({
-    onOpenFilter: openFilterForColumn,
-    activeRef: activeFilterRef,
-  }), [openFilterForColumn]);
-
-  const handleHeaderDoubleClick = useCallback((event) => {
+  // Clicking a column header opens the filter directly (no extra button)
+  const handleHeaderClick = useCallback((event) => {
     const colId = event.column?.getColId?.();
     if (colId && colId !== '_no') setActiveFilterColumn(colId);
   }, []);
@@ -328,8 +312,6 @@ export default function SpreadsheetTable() {
     field,
     headerName: COL_LABELS[field],
     editable: true,
-    headerComponent: GridHeader,
-    headerComponentParams: headerParams,
     ...cfg,
   });
 
@@ -353,7 +335,7 @@ export default function SpreadsheetTable() {
     makeCol('finishDate', { width: 130, minWidth: 100 }),
     makeCol('note', { width: 140, minWidth: 100 }),
     makeCol('date', { width: 120, minWidth: 90 }),
-  ], [headerParams]);
+  ], []);
 
   const defaultColDef = useMemo(() => ({
     sortable: false, resizable: true, filter: false, suppressMovable: true, suppressMenu: true,
@@ -435,7 +417,7 @@ export default function SpreadsheetTable() {
           rowSelection={{ mode: 'single' }}
           onSelectionChanged={onSelectionChanged}
           onCellValueChanged={onCellValueChanged}
-          onColumnHeaderDoubleClicked={handleHeaderDoubleClick}
+          onColumnHeaderClicked={handleHeaderClick}
           animateRows={false}
         />
       </div>
