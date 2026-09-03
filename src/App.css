@@ -212,3 +212,18 @@ html, body, #root {
   .course-group-row { flex-direction: column; align-items: stretch; }
   .teacher-select { min-width: 100%; }
 }
+
+/* Group number input in modal */
+.group-number-input {
+  min-width: 220px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.group-number-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}

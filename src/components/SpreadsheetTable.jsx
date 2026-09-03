@@ -12,8 +12,7 @@ import { getUniqueCourseGroups, generateTrainingPlan } from '../lib/excelGenerat
 
 function createEmptyRow(idx) {
   return {
-    _id: `empty-${Date.now()}-${idx}`,
-    _no: 0,
+    _id: `empty-${Date.now()}-${idx}`, _no: 0,
     fullName: '', serial: '', idNumber: '', birthDate: '',
     phone: '', email: '', rank: '', fullNameId: '', rank2: '',
     courseCode: '', startDate: '', finishDate: '', note: '', date: '',
@@ -29,6 +28,14 @@ function getInitialState() {
   for (let i = 0; i < 50; i++) data.push(createEmptyRow(i));
   return data;
 }
+
+const COL_LABELS = {
+  _no: '№', fullName: 'Soyad, Ad və Ata adı', serial: 'Seriya nömrəsi',
+  idNumber: 'Fərdi ID nömrəsi', birthDate: 'Doğum tarixi', phone: 'Telefon',
+  email: 'Email', rank: 'Rank (Working Diploma)', fullNameId: 'Full Name (ID)',
+  rank2: 'Rank / Vəzifə', courseCode: 'Course Code', startDate: 'Başlama tarixi',
+  finishDate: 'Bitmə tarixi', note: 'Qeyd', date: 'Tarix',
+};
 
 export default function SpreadsheetTable() {
   const [rowData, setRowData] = useState(() => getInitialState());
@@ -57,8 +64,7 @@ export default function SpreadsheetTable() {
       data = data.filter(row =>
         af.every(([field, vals]) => {
           if (!vals || vals.length === 0) return true;
-          const cv = String(row[field] || '').toLowerCase();
-          return vals.some(v => cv.includes(v.toLowerCase()));
+          return vals.some(v => String(row[field] || '').toLowerCase().includes(v.toLowerCase()));
         })
       );
     }
@@ -72,18 +78,14 @@ export default function SpreadsheetTable() {
   }, [rowData, columnFilters, debouncedSearch]);
 
   const pushHistory = useCallback(() => {
-    setHistory(prev => ({
-      past: [...prev.past.slice(-99), [...currentRef.current]],
-      future: [],
-    }));
+    setHistory(prev => ({ past: [...prev.past.slice(-99), [...currentRef.current]], future: [] }));
   }, []);
 
   const undo = useCallback(() => {
     setHistory(prev => {
       if (prev.past.length === 0) return prev;
       const previous = prev.past[prev.past.length - 1];
-      setRowData(previous);
-      currentRef.current = previous;
+      setRowData(previous); currentRef.current = previous;
       return { past: prev.past.slice(0, -1), future: [[...previous], ...prev.future] };
     });
   }, []);
@@ -91,9 +93,7 @@ export default function SpreadsheetTable() {
   const redo = useCallback(() => {
     setHistory(prev => {
       if (prev.future.length === 0) return prev;
-      const next = prev.future[0];
-      setRowData(next);
-      currentRef.current = next;
+      const next = prev.future[0]; setRowData(next); currentRef.current = next;
       return { past: [...prev.past, [...currentRef.current]], future: prev.future.slice(1) };
     });
   }, []);
@@ -111,8 +111,7 @@ export default function SpreadsheetTable() {
     const { data, colDef, newValue } = event;
     const field = colDef.field;
     const newRows = currentRef.current.map(r => r._id === data._id ? { ...r, [field]: newValue ?? '' } : r);
-    currentRef.current = newRows;
-    setRowData(newRows);
+    currentRef.current = newRows; setRowData(newRows);
     setHistory(prev => ({ past: [...prev.past.slice(-99), [...newRows]], future: [] }));
   }, []);
 
@@ -123,8 +122,7 @@ export default function SpreadsheetTable() {
     let rowIndex = -1;
     const target = e.target.closest('.ag-row');
     if (target) {
-      const rowId = target.getAttribute('row-id');
-      const rowNode = gridApi.getRowNode(rowId);
+      const rowNode = gridApi.getRowNode(target.getAttribute('row-id'));
       if (rowNode) rowIndex = rowNode.rowIndex;
     }
     if (rowIndex === -1) {
@@ -138,26 +136,19 @@ export default function SpreadsheetTable() {
 
   const handleTouchStart = useCallback((e) => {
     const touch = e.touches[0];
-    touchTimer.current = setTimeout(() => {
-      setMenuState({ x: 80, y: touch.clientY || 100, rowIndex: 0 });
-    }, 600);
+    touchTimer.current = setTimeout(() => setMenuState({ x: 80, y: touch.clientY || 100, rowIndex: 0 }), 600);
   }, []);
 
-  const handleTouchEnd = useCallback(() => {
-    if (touchTimer.current) clearTimeout(touchTimer.current);
-  }, []);
+  const handleTouchEnd = useCallback(() => { if (touchTimer.current) clearTimeout(touchTimer.current); }, []);
 
   const insertRow = useCallback((position) => {
     if (!menuState) return;
     pushHistory();
     const empty = createEmptyRow(0);
     const newRows = [...currentRef.current];
-    const insertAt = position === 'above' ? menuState.rowIndex : menuState.rowIndex + 1;
-    newRows.splice(insertAt, 0, empty);
+    newRows.splice(position === 'above' ? menuState.rowIndex : menuState.rowIndex + 1, 0, empty);
     const renumbered = renumber(newRows);
-    currentRef.current = renumbered;
-    setRowData(renumbered);
-    setMenuState(null);
+    currentRef.current = renumbered; setRowData(renumbered); setMenuState(null);
     setHistory(prev => ({ past: [...prev.past.slice(-99), [...renumbered]], future: [] }));
   }, [menuState, pushHistory]);
 
@@ -168,30 +159,24 @@ export default function SpreadsheetTable() {
     if (menuState.rowIndex >= 0 && menuState.rowIndex < newRows.length) {
       newRows.splice(menuState.rowIndex, 1);
       const renumbered = renumber(newRows);
-      currentRef.current = renumbered;
-      setRowData(renumbered);
+      currentRef.current = renumbered; setRowData(renumbered);
     }
     setMenuState(null);
     setHistory(prev => ({ past: [...prev.past.slice(-99), [...currentRef.current]], future: [] }));
   }, [menuState, pushHistory]);
 
-  const handleTrainingPlan = useCallback(async () => {
+  const handleTrainingPlan = useCallback(() => {
     setMenuState(null);
     const groups = getUniqueCourseGroups(filteredData);
-    if (groups.length === 0) {
-      alert('Filtrlənmiş məlumatda kurs tapılmadı.');
-      return;
-    }
-    setFilteredForTemplate(filteredData);
-    setModalGroups(groups);
-    setModalOpen(true);
+    if (groups.length === 0) { alert('Filtrlənmiş məlumatda kurs tapılmadı.'); return; }
+    setFilteredForTemplate(filteredData); setModalGroups(groups); setModalOpen(true);
   }, [filteredData]);
 
-  const handleConfirmTrainingPlan = useCallback(async (selections) => {
+  const handleConfirmTrainingPlan = useCallback(async (groupNumbers) => {
     try {
       const resp = await fetch(templateXlsx);
       const buf = await resp.arrayBuffer();
-      await generateTrainingPlan(filteredForTemplate, selections, buf);
+      await generateTrainingPlan(filteredForTemplate, groupNumbers, buf);
       setModalOpen(false);
     } catch (err) {
       console.error('Training Plan xətası:', err);
@@ -202,8 +187,7 @@ export default function SpreadsheetTable() {
   const handleFilterApply = useCallback((field, values) => {
     setColumnFilters(prev => {
       const next = { ...prev };
-      if (values && values.length > 0) next[field] = values;
-      else delete next[field];
+      if (values && values.length > 0) next[field] = values; else delete next[field];
       return next;
     });
     setActiveFilterColumn(null);
@@ -211,10 +195,7 @@ export default function SpreadsheetTable() {
 
   const getUniqueValues = useCallback((field) => {
     const vals = new Set();
-    rowData.forEach(r => {
-      const v = r[field];
-      if (v !== null && v !== undefined && v !== '') vals.add(String(v));
-    });
+    rowData.forEach(r => { const v = r[field]; if (v) vals.add(String(v)); });
     return Array.from(vals).sort();
   }, [rowData]);
 
@@ -227,21 +208,28 @@ export default function SpreadsheetTable() {
   const canRedo = history.future.length > 0;
 
   const columnDefs = useMemo(() => [
-    { field: '_no', headerName: '№', width: 55, editable: false, pinned: 'left', cellClass: 'cell-readonly cell-center cell-no', headerClass: 'header-no' },
-    { field: 'fullName', headerName: 'Soyad, Ad və Ata adı', width: 250, editable: true },
-    { field: 'serial', headerName: 'Seriya nömrəsi', width: 115, editable: true },
-    { field: 'idNumber', headerName: 'Fərdi ID nömrəsi', width: 120, editable: true },
-    { field: 'birthDate', headerName: 'Doğum tarixi', width: 105, editable: true },
-    { field: 'phone', headerName: 'Telefon', width: 160, editable: true },
-    { field: 'email', headerName: 'Email', width: 240, editable: true },
-    { field: 'rank', headerName: 'Rank (Working Diploma)', width: 190, editable: true },
-    { field: 'fullNameId', headerName: 'Full Name (ID)', width: 240, editable: false, cellClass: 'cell-readonly' },
-    { field: 'rank2', headerName: 'Rank / Vəzifə', width: 150, editable: true },
-    { field: 'courseCode', headerName: 'Course Code', width: 105, editable: true },
-    { field: 'startDate', headerName: 'Başlama tarixi', width: 120, editable: true },
-    { field: 'finishDate', headerName: 'Bitmə tarixi', width: 120, editable: true },
-    { field: 'note', headerName: 'Qeyd', width: 130, editable: true },
-    { field: 'date', headerName: 'Tarix', width: 90, editable: true },
+    {
+      field: '_no', headerName: '№', width: 55, minWidth: 55, maxWidth: 55,
+      editable: false, pinned: 'left', suppressMovable: true,
+      cellClass: 'cell-readonly cell-center cell-no', headerClass: 'header-no',
+    },
+    { field: 'fullName', headerName: COL_LABELS.fullName, width: 260, minWidth: 150, editable: true },
+    { field: 'serial', headerName: COL_LABELS.serial, width: 120, minWidth: 90, editable: true },
+    { field: 'idNumber', headerName: COL_LABELS.idNumber, width: 130, minWidth: 100, editable: true },
+    { field: 'birthDate', headerName: COL_LABELS.birthDate, width: 110, minWidth: 90, editable: true },
+    { field: 'phone', headerName: COL_LABELS.phone, width: 175, minWidth: 120, editable: true },
+    { field: 'email', headerName: COL_LABELS.email, width: 260, minWidth: 180, editable: true },
+    { field: 'rank', headerName: COL_LABELS.rank, width: 200, minWidth: 140, editable: true },
+    {
+      field: 'fullNameId', headerName: COL_LABELS.fullNameId, width: 260, minWidth: 150,
+      editable: false, cellClass: 'cell-readonly', suppressMovable: true,
+    },
+    { field: 'rank2', headerName: COL_LABELS.rank2, width: 160, minWidth: 120, editable: true },
+    { field: 'courseCode', headerName: COL_LABELS.courseCode, width: 110, minWidth: 80, editable: true },
+    { field: 'startDate', headerName: COL_LABELS.startDate, width: 130, minWidth: 100, editable: true },
+    { field: 'finishDate', headerName: COL_LABELS.finishDate, width: 130, minWidth: 100, editable: true },
+    { field: 'note', headerName: COL_LABELS.note, width: 140, minWidth: 100, editable: true },
+    { field: 'date', headerName: COL_LABELS.date, width: 120, minWidth: 90, editable: true },
   ], []);
 
   const defaultColDef = useMemo(() => ({
@@ -274,15 +262,12 @@ export default function SpreadsheetTable() {
 
       {Object.keys(columnFilters).length > 0 && (
         <div className="active-filters-bar">
-          {Object.entries(columnFilters).map(([field, values]) => {
-            const labels = { _no:'№', fullName:'Soyad, Ad', serial:'Seriya', idNumber:'ID', birthDate:'Doğum', phone:'Telefon', email:'Email', rank:'Rank', fullNameId:'Full Name', rank2:'Vəzifə', courseCode:'Kurs kodu', startDate:'Başlama', finishDate:'Bitmə', note:'Qeyd', date:'Tarix' };
-            return (
-              <span className="filter-chip" key={field}>
-                {labels[field] || field}: {values.length}
-                <button onClick={() => setColumnFilters(prev => { const n = { ...prev }; delete n[field]; return n; })}>✕</button>
-              </span>
-            );
-          })}
+          {Object.entries(columnFilters).map(([field, values]) => (
+            <span className="filter-chip" key={field}>
+              {COL_LABELS[field] || field}: {values.length}
+              <button onClick={() => setColumnFilters(prev => { const n = { ...prev }; delete n[field]; return n; })}>✕</button>
+            </span>
+          ))}
         </div>
       )}
 
@@ -314,8 +299,7 @@ export default function SpreadsheetTable() {
 
       {menuState && (
         <ContextMenu
-          x={menuState.x}
-          y={menuState.y}
+          x={menuState.x} y={menuState.y}
           onClose={() => setMenuState(null)}
           onInsertAbove={() => insertRow('above')}
           onInsertBelow={() => insertRow('below')}
@@ -327,7 +311,7 @@ export default function SpreadsheetTable() {
       {activeFilterColumn && (
         <FilterPanel
           field={activeFilterColumn}
-          headerName={activeFilterColumn}
+          headerName={COL_LABELS[activeFilterColumn] || activeFilterColumn}
           values={getUniqueValues(activeFilterColumn)}
           selected={columnFilters[activeFilterColumn] || []}
           onApply={handleFilterApply}
