@@ -413,7 +413,6 @@ export default function SpreadsheetTable() {
           headerHeight={44}
           suppressRowHoverHighlight={false}
           singleClickEdit={true}
-          stopEditingWhenCellsLoseFocus={true}
           rowSelection={{ mode: 'single' }}
           onSelectionChanged={onSelectionChanged}
           onCellValueChanged={onCellValueChanged}
