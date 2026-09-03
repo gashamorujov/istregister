@@ -135,7 +135,7 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     const vRow = sheet.getRow(currentRow);
     vRow.height = 33;
 
-    // B: course name — no fill (matches template pattern:"none")
+    // B: course name — no fill (format painter source)
     const bV = vRow.getCell(2);
     bV.value = courseName;
     bV.font = { name: 'Arial', size: 25, bold: true };
@@ -143,15 +143,15 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     bV.fill = NO_FILL;
     bV.border = bAll();
 
-    // C: hours — white
+    // C: hours — format painted from course name (no fill)
     const cV = vRow.getCell(3);
     cV.value = courseHours;
     cV.font = { name: 'Arial', size: 25, bold: true };
     cV.alignment = { horizontal: 'center', vertical: 'bottom' };
-    cV.fill = WHITE;
+    cV.fill = NO_FILL;
     cV.border = bAll();
 
-    // D: group — light
+    // D: group — light fill
     const dV = vRow.getCell(4);
     dV.value = groupNum;
     dV.font = { name: 'Arial', size: 25, bold: true };
@@ -159,15 +159,15 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     dV.fill = LIGHT;
     dV.border = bAll();
 
-    // E: dates — white
+    // E: dates — format painted from course name (no fill)
     const eV = vRow.getCell(5);
     eV.value = dateRange;
     eV.font = { name: 'Arial', size: 25, bold: true };
     eV.alignment = { horizontal: 'center', vertical: 'bottom' };
-    eV.fill = WHITE;
+    eV.fill = NO_FILL;
     eV.border = bAll();
 
-    // F: teacher — light
+    // F: teacher — light fill
     const fV = vRow.getCell(6);
     fV.value = teacher;
     fV.font = { name: 'Arial', size: 25, bold: true };
@@ -198,10 +198,10 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
       b.fill = NO_FILL;
       b.border = bNoLeftNoTop();
 
-      // C: empty — LIGHT fill always
+      // C: empty — LIGHT fill, 30pt (matching template)
       const c = sRow.getCell(3);
       c.value = undefined;
-      c.font = { name: 'Arial', size: 28 };
+      c.font = { name: 'Arial', size: 30 };
       c.alignment = { horizontal: 'center', vertical: 'bottom' };
       c.fill = LIGHT;
       c.border = bAll();
@@ -214,20 +214,20 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
       d.fill = LIGHT;
       d.border = bNoLeftNoTop();
 
-      // E: İlkin — Arial 30pt NOT bold, LIGHT fill always
+      // E: empty — LIGHT fill (format painted from course name pattern)
       const e = sRow.getCell(5);
-      e.value = 'İlkin';
+      e.value = undefined;
       e.font = { name: 'Arial', size: 30 };
       e.alignment = { horizontal: 'center', vertical: 'bottom' };
       e.fill = LIGHT;
       e.border = bNoLeftNoTop();
 
-      // F: empty — no fill
+      // F: İlkin — Arial 30pt NOT bold, LIGHT fill (below teacher name)
       const f = sRow.getCell(6);
-      f.value = undefined;
-      f.font = { name: 'Arial', size: 28 };
+      f.value = 'İlkin';
+      f.font = { name: 'Arial', size: 30 };
       f.alignment = { horizontal: 'center', vertical: 'bottom' };
-      f.fill = NO_FILL;
+      f.fill = LIGHT;
       f.border = bAll();
 
       currentRow++;
