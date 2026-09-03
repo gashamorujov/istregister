@@ -26,7 +26,6 @@ export function getUniqueCourseGroups(records) {
 
 /* ── Template-matching style constants ── */
 const FILL_WHITE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
-const FILL_LIGHT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F8F9' } };
 const THIN = 'thin';
 const BLACK = { argb: 'FF000000' };
 
@@ -80,27 +79,6 @@ function styleStudentEmpty(cell) {
   cell.border = thinBorder();
 }
 
-function styleStudentEmptyAlt(cell) {
-  cell.font = { name: 'Arial', size: 25, bold: true };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.fill = FILL_WHITE;
-  cell.border = thinBorder();
-}
-
-function styleStudentStatus(cell) {
-  cell.font = { name: 'Arial', size: 30 };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.fill = FILL_LIGHT;
-  cell.border = thinBorder();
-}
-
-function styleStudentFill(cell, fill) {
-  cell.font = { name: 'Arial', size: 25, bold: true };
-  cell.alignment = { horizontal: 'center', vertical: 'center' };
-  cell.fill = fill;
-  cell.border = thinBorder();
-}
-
 /* ── Main generator ── */
 export async function generateTrainingPlan(filteredRecords, entries, templateBuffer) {
   const workbook = new ExcelJS.Workbook();
@@ -149,20 +127,20 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     cH.value = 'Tədrisin ümumi saatı';
     styleHeaderLabel(cH, FILL_WHITE);
 
-    // D: Qrup nömrəsi (light fill, all borders)
+    // D: Qrup nömrəsi (white fill, all borders) — styled the same as other columns
     const dH = hdr.getCell(4);
     dH.value = 'Qrup nömrəsi';
-    styleHeaderLabel(dH, FILL_LIGHT);
+    styleHeaderLabel(dH, FILL_WHITE);
 
-    // E: Başlama və bitmə tarixi (light fill, all borders)
+    // E: Başlama və bitmə tarixi (white fill, all borders)
     const eH = hdr.getCell(5);
     eH.value = 'Başlama və bitmə tarixi';
-    styleHeaderLabel(eH, FILL_LIGHT);
+    styleHeaderLabel(eH, FILL_WHITE);
 
-    // F: Müəllimlər (light fill, all borders)
+    // F: Müəllimlər (white fill, all borders) — styled the same as other columns
     const fH = hdr.getCell(6);
     fH.value = 'Kursu tədris edən müəllimlərin adı və soyadı';
-    styleHeaderLabel(fH, FILL_LIGHT);
+    styleHeaderLabel(fH, FILL_WHITE);
 
     currentRow++;
 
@@ -180,7 +158,7 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
 
     const dV = vRow.getCell(4);
     dV.value = groupNum;
-    styleValueCell(dV, FILL_LIGHT);
+    styleValueCell(dV, FILL_WHITE);
 
     const eV = vRow.getCell(5);
     eV.value = dateRange;
@@ -189,6 +167,9 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
     const fV = vRow.getCell(6);
     fV.value = teacher;
     styleValueCell(fV, FILL_WHITE);
+
+    /* Req 5: course-name row (this values row) AND the row directly below it stay bold.
+       styleValueCell already sets bold:true; the header-labels row above is also bold. */
 
     currentRow++;
 
@@ -212,7 +193,7 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
       cCell.value = undefined;
       styleStudentEmpty(cCell);
 
-      // D: rank
+      // D: rank (white / no fill — matches other columns)
       const dCell = sRow.getCell(4);
       dCell.value = student.rank || '';
       styleStudentText(dCell);
@@ -222,10 +203,10 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
       eCell.value = undefined;
       styleStudentEmpty(eCell);
 
-      // F: status "İlkin" (light fill)
+      // F: status "İlkin" (white fill — matches other columns, no distinct color)
       const fCell = sRow.getCell(6);
       fCell.value = 'İlkin';
-      styleStudentStatus(fCell);
+      styleStudentEmpty(fCell);
 
       currentRow++;
     });
@@ -249,3 +230,4 @@ export async function generateTrainingPlan(filteredRecords, entries, templateBuf
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+

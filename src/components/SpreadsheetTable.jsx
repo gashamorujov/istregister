@@ -8,6 +8,7 @@ import templateXlsx from '../data/Training_plan_template.xlsx?url';
 import ContextMenu from './ContextMenu';
 import FilterPanel from './FilterPanel';
 import TrainingPlanModal from './TrainingPlanModal';
+import ImportExcelModal from './ImportExcelModal';
 import { getUniqueCourseGroups, generateTrainingPlan } from '../lib/excelGenerator';
 
 function createEmptyRow(idx) {
@@ -23,6 +24,30 @@ function renumber(rows) {
   return rows.map((row, i) => ({ ...row, _no: i + 1 }));
 }
 
+// Unique identity used to detect already-existing records (for import dedup)
+function rowKey(row) {
+  return [row.fullName, row.serial, row.idNumber, row.courseCode]
+    .map(v => String(v || '').trim().toLowerCase()).join('|');
+}
+
+// Column mapping used when importing an Excel file
+export const IMPORT_FIELDS = [
+  { field: 'fullName', label: 'Soyad, Ad və Ata adı', required: true },
+  { field: 'serial', label: 'Seriya nömrəsi', required: false },
+  { field: 'idNumber', label: 'Fərdi ID nömrəsi', required: false },
+  { field: 'birthDate', label: 'Doğum tarixi', required: false },
+  { field: 'phone', label: 'Telefon', required: false },
+  { field: 'email', label: 'Email', required: false },
+  { field: 'rank', label: 'Rank (Working Diploma)', required: false },
+  { field: 'fullNameId', label: 'Full Name (ID)', required: false },
+  { field: 'rank2', label: 'Rank / Vəzifə', required: false },
+  { field: 'courseCode', label: 'Course Code', required: true },
+  { field: 'startDate', label: 'Başlama tarixi', required: false },
+  { field: 'finishDate', label: 'Bitmə tarixi', required: false },
+  { field: 'note', label: 'Qeyd', required: false },
+  { field: 'date', label: 'Tarix', required: false },
+];
+
 function getInitialState() {
   const data = studentsData.map((r, i) => ({ ...r, _no: i + 1, _id: `reg-${i}` }));
   for (let i = 0; i < 50; i++) data.push(createEmptyRow(i));
@@ -37,6 +62,9 @@ const COL_LABELS = {
   finishDate: 'Bitmə tarixi', note: 'Qeyd', date: 'Tarix',
 };
 
+// Fields shown in the quick (synchronous) filter bar
+const QUICK_FILTER_FIELDS = ['courseCode', 'rank', 'rank2', 'startDate', 'finishDate'];
+
 export default function SpreadsheetTable() {
   const [rowData, setRowData] = useState(() => getInitialState());
   const [searchText, setSearchText] = useState('');
@@ -48,6 +76,7 @@ export default function SpreadsheetTable() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalGroups, setModalGroups] = useState([]);
   const [filteredForTemplate, setFilteredForTemplate] = useState([]);
+  const [importOpen, setImportOpen] = useState(false);
   const gridRef = useRef(null);
   const touchTimer = useRef(null);
   const currentRef = useRef(rowData);
@@ -127,7 +156,7 @@ export default function SpreadsheetTable() {
     }
     if (rowIndex === -1) {
       const rect = gridRef.current?.eGridDiv?.getBoundingClientRect();
-      if (rect) rowIndex = Math.floor((e.clientY - rect.top) / 36);
+      if (rect) rowIndex = Math.floor((e.clientY - rect.top) / 40);
     }
     const x = Math.min(e.clientX, window.innerWidth - 240);
     const y = Math.min(e.clientY, window.innerHeight - 180);
@@ -184,12 +213,39 @@ export default function SpreadsheetTable() {
     }
   }, [filteredForTemplate]);
 
+  // Import: append only brand-new rows (dedup by key), preserving all existing data
+  const handleImportConfirm = useCallback((newRows) => {
+    if (!newRows || newRows.length === 0) return;
+    pushHistory();
+    const existing = new Set(currentRef.current.map(r => rowKey(r)));
+    const added = newRows.filter(r => !existing.has(rowKey(r))).map((r, i) => ({ ...r, _id: `import-${Date.now()}-${i}` }));
+    if (added.length === 0) { setImportOpen(false); return; }
+    const merged = renumber([...currentRef.current, ...added]);
+    currentRef.current = merged; setRowData(merged);
+    setHistory(prev => ({ past: [...prev.past.slice(-99), [...merged]], future: [] }));
+    setImportOpen(false);
+  }, [pushHistory]);
+
   const handleFilterApply = useCallback((field, values) => {
     setColumnFilters(prev => {
       const next = { ...prev };
       if (values && values.length > 0) next[field] = values; else delete next[field];
       return next;
     });
+    setActiveFilterColumn(null);
+  }, []);
+
+  // Quick (synchronous) filter: single selected value per field, applied immediately on change
+  const handleQuickFilterChange = useCallback((field, value) => {
+    setColumnFilters(prev => {
+      const next = { ...prev };
+      if (value) next[field] = [value]; else delete next[field];
+      return next;
+    });
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setColumnFilters({});
     setActiveFilterColumn(null);
   }, []);
 
@@ -251,10 +307,31 @@ export default function SpreadsheetTable() {
         </div>
         <div className="toolbar-right">
           <span className="row-count">{filteredData.length} / {rowData.length} sətir</span>
+          <button className="btn-import" onClick={() => setImportOpen(true)} title="Excel-dən yeni məlumat idxal et">📥 Import Excel</button>
           {Object.keys(columnFilters).length > 0 && (
-            <button className="btn-clear-filters" onClick={() => setColumnFilters({})}>✕ Filtri təmizlə</button>
+            <button className="btn-clear-filters" onClick={resetFilters}>✕ Filtri təmizlə</button>
           )}
         </div>
+      </div>
+
+      <div className="filter-bar">
+        <span className="filter-bar-label">🔎 Filtrlər</span>
+        {QUICK_FILTER_FIELDS.map(field => (
+          <div className="filter-field" key={field}>
+            <span className="filter-field-label">{COL_LABELS[field] || field}</span>
+            <select
+              className={`filter-select ${columnFilters[field] ? 'has-value' : ''}`}
+              value={(columnFilters[field] && columnFilters[field][0]) || ''}
+              onChange={(e) => handleQuickFilterChange(field, e.target.value)}
+            >
+              <option value="">Hamısı</option>
+              {getUniqueValues(field).map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+        <button className="btn-reset-filters" onClick={resetFilters} disabled={Object.keys(columnFilters).length === 0}>⟲ Reset</button>
       </div>
 
       {Object.keys(columnFilters).length > 0 && (
@@ -281,8 +358,8 @@ export default function SpreadsheetTable() {
           defaultColDef={defaultColDef}
           modules={[ClientSideRowModelModule]}
           enableCellTextSelection={true}
-          rowHeight={36}
-          headerHeight={40}
+          rowHeight={40}
+          headerHeight={42}
           suppressRowHoverHighlight={false}
           singleClickEdit={true}
           onCellValueChanged={onCellValueChanged}
@@ -320,6 +397,15 @@ export default function SpreadsheetTable() {
           onCancel={() => setModalOpen(false)}
         />
       )}
+
+      {importOpen && (
+        <ImportExcelModal
+          existingKeys={new Set(currentRef.current.map(r => rowKey(r)))}
+          onConfirm={handleImportConfirm}
+          onCancel={() => setImportOpen(false)}
+        />
+      )}
     </div>
   );
 }
+
