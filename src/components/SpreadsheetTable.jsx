@@ -172,11 +172,11 @@ export default function SpreadsheetTable() {
     setFilteredForTemplate(filteredData); setModalGroups(groups); setModalOpen(true);
   }, [filteredData]);
 
-  const handleConfirmTrainingPlan = useCallback(async (groupNumbers) => {
+  const handleConfirmTrainingPlan = useCallback(async (entries) => {
     try {
       const resp = await fetch(templateXlsx);
       const buf = await resp.arrayBuffer();
-      await generateTrainingPlan(filteredForTemplate, groupNumbers, buf);
+      await generateTrainingPlan(filteredForTemplate, entries, buf);
       setModalOpen(false);
     } catch (err) {
       console.error('Training Plan xətası:', err);

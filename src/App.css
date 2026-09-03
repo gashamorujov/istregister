@@ -446,3 +446,29 @@ html, body, #root {
 @media (max-width: 768px) {
   .btn-admin-panel { margin-left: 8px; font-size: 0.76rem; padding: 5px 10px; }
 }
+
+/* Training Plan modal - teacher + group fields */
+.modal-wide { max-width: 780px; }
+.tp-fields { display: flex; gap: 12px; align-items: flex-end; }
+.tp-field { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.tp-label { font-size: 0.74rem; font-weight: 600; color: var(--text-muted); }
+.tp-input, .tp-select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  outline: none;
+  background: white;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tp-input:focus, .tp-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+.tp-required { border-color: var(--danger) !important; }
+.tp-select { min-width: 200px; }
+
+@media (max-width: 600px) {
+  .tp-fields { flex-direction: column; align-items: stretch; width: 100%; }
+  .tp-select { min-width: 100%; }
+}
