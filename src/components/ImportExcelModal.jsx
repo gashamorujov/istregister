@@ -10,13 +10,44 @@ function rowKey(row) {
 
 function parseCellText(cell) {
   if (cell === null || cell === undefined) return '';
-  if (typeof cell === 'object' && cell.text) return String(cell.text).trim();
-  if (cell && typeof cell === 'object' && 'result' in cell) return String(cell.result || '').trim();
-  if (cell && typeof cell === 'object' && 'richText' in cell) {
-    return String((cell.richText || []).map(r => r.text).join('')).trim();
+  const v = cell.value;
+  if (v === null || v === undefined) return '';
+
+  // Date object - format as dd.mm.yyyy
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    const d = String(v.getUTCDate()).padStart(2, '0');
+    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+    const y = v.getUTCFullYear();
+    return d + '.' + m + '.' + y;
   }
-  if (cell && typeof cell === 'object' && 'hyperlinks' in cell) return String(cell.hyperlinks?.text || '').trim();
-  return String(cell).trim();
+
+  // Rich text
+  if (v.richText && Array.isArray(v.richText)) {
+    return v.richText.map(rt => rt.text || '').join('').trim();
+  }
+
+  // Formula result
+  if (v.result !== undefined && v.result !== null) {
+    if (v.result instanceof Date && !isNaN(v.result.getTime())) {
+      const d = String(v.result.getUTCDate()).padStart(2, '0');
+      const m = String(v.result.getUTCMonth() + 1).padStart(2, '0');
+      return d + '.' + m + '.' + v.result.getUTCFullYear();
+    }
+    return String(v.result).trim();
+  }
+
+  // Hyperlink
+  if (v.text) return String(v.text).trim();
+
+  return String(v).trim();
+}
+
+function matchField(label) {
+  const low = label.toLowerCase().trim();
+  return IMPORT_FIELDS.find(f => {
+    const fLow = f.label.toLowerCase();
+    return low === fLow || low.includes(fLow) || fLow.includes(low);
+  });
 }
 
 export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) {
@@ -38,56 +69,51 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
     try {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(await file.arrayBuffer());
-      const sheet = workbook.worksheets[0];
+
+      // Find "REGİSTR-2026" sheet, fallback to first sheet
+      let sheet = workbook.getWorksheet('REGİSTR-2026');
+      if (!sheet) sheet = workbook.worksheets[0];
       if (!sheet) { setError('Faylda vərəq tapılmadı.'); return; }
 
-      const headerRow = sheet.getRow(1);
+      // Find header row - check first 3 rows for row with matching labels
+      let headerRowNum = 1;
+      for (let r = 1; r <= 3; r++) {
+        const testRow = sheet.getRow(r);
+        let matchCount = 0;
+        testRow.eachCell({ includeEmpty: true }, (cell) => {
+          const label = parseCellText(cell);
+          if (label && matchField(label)) matchCount++;
+        });
+        if (matchCount >= 3) { headerRowNum = r; break; }
+      }
+
+      const headerRow = sheet.getRow(headerRowNum);
       const colMap = {};
       headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        const label = parseCellText(cell.value);
-        const found = IMPORT_FIELDS.find(f => f.label.toLowerCase() === label.toLowerCase() || f.field.toLowerCase() === label.toLowerCase());
+        const label = parseCellText(cell);
+        const found = matchField(label);
         if (found) colMap[colNumber] = found.field;
       });
 
-      const hasAnyField = Object.keys(colMap).length > 0;
+      if (Object.keys(colMap).length === 0) {
+        setError('Başlıqlar tanınmadı. Düzgün Excel faylı seçdiyinizə əmin olun.');
+        return;
+      }
+
       const parsed = [];
       sheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        if (hasAnyField) {
-          const rec = {};
-          let hasValue = false;
-          Object.entries(colMap).forEach(([cn, field]) => {
-            const cell = row.getCell(Number(cn));
-            const v = parseCellText(cell.value);
-            rec[field] = v;
-            if (v) hasValue = true;
-          });
-          if (!hasValue) return;
-          parsed.push(rec);
-        } else {
-          const fullName = parseCellText(row.getCell(1).value);
-          if (!fullName) return;
-          const rec = {
-            fullName,
-            serial: parseCellText(row.getCell(2).value),
-            idNumber: parseCellText(row.getCell(3).value),
-            birthDate: parseCellText(row.getCell(4).value),
-            phone: parseCellText(row.getCell(5).value),
-            email: parseCellText(row.getCell(6).value),
-            rank: parseCellText(row.getCell(7).value),
-            fullNameId: parseCellText(row.getCell(8).value),
-            rank2: parseCellText(row.getCell(9).value),
-            courseCode: parseCellText(row.getCell(10).value),
-            startDate: parseCellText(row.getCell(11).value),
-            finishDate: parseCellText(row.getCell(12).value),
-            note: parseCellText(row.getCell(13).value),
-            date: parseCellText(row.getCell(14).value),
-          };
-          parsed.push(rec);
-        }
+        if (rowNumber <= headerRowNum) return;
+        const rec = {};
+        let hasValue = false;
+        Object.entries(colMap).forEach(([cn, field]) => {
+          const v = parseCellText(row.getCell(Number(cn)));
+          rec[field] = v;
+          if (v) hasValue = true;
+        });
+        if (!hasValue) return;
+        parsed.push(rec);
       });
 
-      // Mark new vs existing
       const result = parsed.map(rec => ({ ...rec, IS_NEW: !existingKeys.has(rowKey(rec)) }));
       const newRows = result.filter(r => r.IS_NEW);
       setNewCount(newRows.length);
@@ -136,7 +162,7 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
               >
                 <div className="import-dropzone-icon"><DocIcon /></div>
                 <div className="import-dropzone-text">Excel faylı seçin və ya buraya sürükləyin</div>
-                <div className="import-dropzone-sub">.xlsx formatında — yalnız yeni məlumatlar əlavə olunur</div>
+                <div className="import-dropzone-sub">.xlsx formatında — yalnız REGİSTR-2026 səhifəsi oxunacaq</div>
                 <input
                   ref={inputRef}
                   type="file"
