@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import {
   CloseIcon, DocIcon, CheckIcon, ClipboardIcon, WarningIcon, ArrowLeftIcon,
@@ -8,22 +8,15 @@ import {
   emptyFieldsOf, hasIdentitySignal,
 } from '../lib/importMapping';
 
-// Generous upper bound on how many spreadsheet/clipboard columns we scan per
-// row when looking for header text or reading values — comfortably above the
-// ~15 columns REGİSTR-2026 actually uses, so a reordered or slightly widened
-// sheet still gets read correctly.
 const COL_SCAN_LIMIT = 40;
 
 const STEP_TITLES = {
   choose: 'Import',
   clipboard: 'Clipboard ilə idxal',
-  file: 'Excel sənədi ilə idxal',
+  file: 'Fayl ilə idxal',
   preview: 'Önizləmə (Preview)',
 };
 
-// Approximate preview-table column widths, echoing the real widths used in
-// the site's own grid so the preview reads as close to "how it will look on
-// the site" as a plain HTML table reasonably can.
 const PREVIEW_COL_WIDTHS = {
   fullName: 210, serial: 110, idNumber: 120, birthDate: 100, phone: 140,
   email: 190, rank: 170, fullNameId: 200, rank2: 130, courseCode: 100,
@@ -31,11 +24,10 @@ const PREVIEW_COL_WIDTHS = {
 };
 
 function cleanVal(v) {
-  return String(v === null || v === undefined ? '' : v).replace(/\[object Object\]/g, '').trim();
+  const s = String(v === null || v === undefined ? '' : v);
+  return s.includes('[object Object]') ? '' : s.trim();
 }
 
-// Reads one ExcelJS cell into plain display text, handling dates, formulas
-// (using their cached result), and rich text runs.
 function parseCellText(cell) {
   if (!cell) return '';
   const v = cell.value;
@@ -55,12 +47,10 @@ function parseCellText(cell) {
     return String(v.result).trim();
   }
   if (v.text) return String(v.text).trim();
+  if (typeof v === 'object') return '';
   return cleanVal(v);
 }
 
-// Scans the first few rows of a worksheet for the one whose cell text best
-// matches our known column headers — by wording, never by column letter —
-// and returns the winning row number plus its column→field mapping.
 function findHeaderInSheet(sheet) {
   let best = null;
   for (let r = 1; r <= 5; r++) {
@@ -75,14 +65,90 @@ function findHeaderInSheet(sheet) {
   return best;
 }
 
-export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) {
-  const [step, setStep] = useState('choose'); // 'choose' | 'clipboard' | 'file' | 'preview'
-  const [source, setSource] = useState(''); // which input step preview should return to
+// CSV / semicolon / comma delimited parser (respects quoted fields)
+function parseCSVText(text) {
+  const delimiter = text.includes('\t') ? '\t'
+    : text.includes(';') ? ';'
+    : ',';
+
+  const lines = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < text.length && text[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === delimiter || ch === '\r' || ch === '\n') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        lines.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+  }
+  lines.push(current);
+
+  // Group into rows based on delimiter
+  const rows = [];
+  let row = [];
+  for (const cell of lines) {
+    if (cell === '\r') continue;
+    row.push(cell);
+    // Row break on delimiter = newline
+    if (lines.indexOf(cell) === lines.length - 1 || lines[lines.indexOf(cell) + 1] === undefined) {
+      // Check if this was actually a row end
+    }
+  }
+
+  // Simpler approach: split by newline first, then by delimiter
+  const textLines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  const parsed = [];
+  for (const line of textLines) {
+    const cells = [];
+    let c = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') { c += '"'; i++; }
+          else inQ = false;
+        } else { c += ch; }
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === delimiter) { cells.push(c); c = ''; }
+        else c += ch;
+      }
+    }
+    cells.push(c);
+    parsed.push(cells);
+  }
+  return parsed;
+}
+
+export default function ImportExcelModal({ existingKeys, existingRows, onConfirm, onCancel }) {
+  const [step, setStep] = useState('choose');
+  const [source, setSource] = useState('');
   const [fileName, setFileName] = useState('');
   const [clipboardText, setClipboardText] = useState('');
   const [previewRows, setPreviewRows] = useState(null);
   const [newCount, setNewCount] = useState(0);
-  const [skippedCount, setSkippedCount] = useState(0);
+  const [changedCount, setChangedCount] = useState(0);
+  const [unchangedCount, setUnchangedCount] = useState(0);
   const [emptyCount, setEmptyCount] = useState(0);
   const [missingCols, setMissingCols] = useState([]);
   const [usedFallback, setUsedFallback] = useState(false);
@@ -91,28 +157,48 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
 
-  const processParsed = (records) => {
+  // Compare existing rows map for changed detection
+  const existingRowsMapRef = useRef(new Map());
+  
+  // Populate existingRowsMap from parent data
+  useEffect(() => {
+    if (existingRows && existingRows.length > 0) {
+      const map = new Map();
+      existingRows.forEach(r => {
+        const key = [r.fullName, r.serial, r.idNumber, r.courseCode]
+          .map(v => String(v || '').trim().toLowerCase()).join('|');
+        map.set(key, r);
+      });
+      existingRowsMapRef.current = map;
+    }
+  }, [existingRows]);
+
+  const processParsed = (records, existingMap) => {
     if (!records || records.length === 0) { setError('Heç bir məlumat tapılmadı.'); return; }
-    const result = records.map((rec) => ({
-      ...rec,
-      IS_NEW: !existingKeys.has(rowKey(rec)),
-      EMPTY_FIELDS: emptyFieldsOf(rec),
-    }));
-    const newRows = result.filter((r) => r.IS_NEW);
-    setNewCount(newRows.length);
-    setSkippedCount(result.length - newRows.length);
-    setEmptyCount(result.filter((r) => r.EMPTY_FIELDS.length > 0).length);
+    const result = records.map((rec) => {
+      const key = rowKey(rec);
+      const existing = existingMap.get(key);
+      let status = 'NEW';
+      if (existing) {
+        const changed = TARGET_FIELDS.some(f => String(rec[f] || '') !== String(existing[f] || ''));
+        status = changed ? 'CHANGED' : 'UNCHANGED';
+      }
+      return { ...rec, _STATUS: status, EMPTY_FIELDS: emptyFieldsOf(rec) };
+    });
+    setNewCount(result.filter(r => r._STATUS === 'NEW').length);
+    setChangedCount(result.filter(r => r._STATUS === 'CHANGED').length);
+    setUnchangedCount(result.filter(r => r._STATUS === 'UNCHANGED').length);
+    setEmptyCount(result.filter(r => r.EMPTY_FIELDS.length > 0).length);
     setPreviewRows(result);
     setStep('preview');
   };
 
   const resetOutcome = () => {
-    setError(''); setPreviewRows(null); setNewCount(0); setSkippedCount(0);
-    setEmptyCount(0); setMissingCols([]); setUsedFallback(false);
+    setError(''); setPreviewRows(null); setNewCount(0); setChangedCount(0);
+    setUnchangedCount(0); setEmptyCount(0); setMissingCols([]); setUsedFallback(false);
   };
 
-  // ---------- Excel Document path ----------
-
+  // Excel file handling
   const handleFile = async (file) => {
     resetOutcome();
     if (!file) return;
@@ -120,44 +206,82 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
     setSource('file');
     setLoading(true);
     try {
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(await file.arrayBuffer());
+      const ext = file.name.split('.').pop().toLowerCase();
+      let records = [];
 
-      // Only the REGİSTR-2026 worksheet is ever read. Every other sheet in the
-      // workbook — visible, hidden, or helper — is left completely untouched.
-      const sheet = workbook.getWorksheet('REGİSTR-2026');
-      if (!sheet) { setError('Faylda "REGİSTR-2026" səhifəsi tapılmadı.'); setLoading(false); return; }
+      if (ext === 'xlsx') {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(await file.arrayBuffer());
+        const sheet = workbook.getWorksheet('REGİSTR-2026') || workbook.worksheets[0];
+        if (!sheet) { setError('Faylda heç bir səhifə tapılmadı.'); setLoading(false); return; }
 
-      const header = findHeaderInSheet(sheet);
-      if (!header) {
-        setError('REGİSTR-2026 səhifəsinin sütun başlıqları tanınmadı. Fayl strukturunu yoxlayın.');
-        setLoading(false);
-        return;
+        const header = findHeaderInSheet(sheet);
+        if (!header) {
+          // Fallback: try to read all rows with default column mapping
+          const colIndexToField = new Map();
+          TARGET_FIELDS.forEach((f, i) => colIndexToField.set(i + 1, f));
+          const fallbackMapping = { colIndexToField, matchedFields: new Set(TARGET_FIELDS) };
+          sheet.eachRow((row, rowNumber) => {
+            if (rowNumber <= 1) return;
+            const texts = [];
+            for (let c = 1; c <= COL_SCAN_LIMIT; c++) texts.push(parseCellText(row.getCell(c)));
+            const rec = {};
+            fallbackMapping.colIndexToField.forEach((field, idx) => { rec[field] = texts[idx] || ''; });
+            if (hasIdentitySignal(rec)) records.push(rec);
+          });
+          setUsedFallback(true);
+          setMissingCols([]);
+        } else {
+          sheet.eachRow((row, rowNumber) => {
+            if (rowNumber <= header.rowNumber) return;
+            const texts = [];
+            for (let c = 1; c <= COL_SCAN_LIMIT; c++) texts.push(parseCellText(row.getCell(c)));
+            const rec = {};
+            header.colIndexToField.forEach((field, idx) => { rec[field] = texts[idx] || ''; });
+            if (!hasIdentitySignal(rec)) return;
+            if (detectColumnMapping(texts).matchedFields.size >= HEADER_MATCH_THRESHOLD) return;
+            records.push(rec);
+          });
+          const missing = TARGET_FIELDS.filter((f) => !header.matchedFields.has(f));
+          setMissingCols(missing.map((f) => FIELD_LABELS[f]));
+        }
+      } else {
+        // CSV / TXT: read as text and parse
+        const text = await file.text();
+        const parsed = parseCSVText(text);
+        if (parsed.length < 2) { setError('Faylda kifayət qədər məlumat tapılmadı.'); setLoading(false); return; }
+
+        const headerCells = parsed[0];
+        const { colIndexToField, matchedFields } = detectColumnMapping(headerCells);
+
+        if (matchedFields.size >= HEADER_MATCH_THRESHOLD) {
+          for (let i = 1; i < parsed.length; i++) {
+            const rec = {};
+            colIndexToField.forEach((field, idx) => { rec[field] = parsed[i][idx] || ''; });
+            if (hasIdentitySignal(rec)) records.push(rec);
+          }
+          const missing = TARGET_FIELDS.filter((f) => !matchedFields.has(f));
+          setMissingCols(missing.map((f) => FIELD_LABELS[f]));
+        } else {
+          // Fallback: assume canonical column order
+          const fallbackMapping = new Map();
+          TARGET_FIELDS.forEach((f, i) => fallbackMapping.set(i, f));
+          for (let i = 0; i < parsed.length; i++) {
+            const rec = {};
+            fallbackMapping.forEach((field, idx) => { rec[field] = parsed[i][idx] || ''; });
+            if (hasIdentitySignal(rec)) records.push(rec);
+          }
+          setUsedFallback(true);
+        }
       }
 
-      const parsed = [];
-      sheet.eachRow((row, rowNumber) => {
-        if (rowNumber <= header.rowNumber) return;
-        const texts = [];
-        for (let c = 1; c <= COL_SCAN_LIMIT; c++) texts.push(parseCellText(row.getCell(c)));
-        const rec = {};
-        header.colIndexToField.forEach((field, idx) => {
-          rec[field] = texts[idx] || '';
-        });
-        // A row only counts if it actually identifies someone — guards against
-        // a value dragged/filled far past the real data in just one column.
-        if (!hasIdentitySignal(rec)) return;
-        // Guard against a stray repeated header row (e.g. a printed multi-page export)
-        if (detectColumnMapping(texts).matchedFields.size >= HEADER_MATCH_THRESHOLD) return;
-        parsed.push(rec);
-      });
-
-      const missing = TARGET_FIELDS.filter((f) => !header.matchedFields.has(f));
-      setMissingCols(missing.map((f) => FIELD_LABELS[f]));
-      processParsed(parsed);
+      // Build existing map for changed detection
+      // We need the current rows from the parent — passed as existingKeys (Set) but we also need values
+      // Since we only get existingKeys, we detect changed by key presence
+      processParsed(records, existingRowsMapRef.current);
     } catch (err) {
-      console.error('Excel parse xətası:', err);
-      setError('Excel faylı oxunarkən xəta baş verdi. Düzgün .xlsx fayl seçdiyinizə əmin olun.');
+      console.error('Fayl parse xətası:', err);
+      setError('Fayl oxunarkən xəta baş verdi. Formatı yoxlayın.');
     } finally {
       setLoading(false);
     }
@@ -170,8 +294,7 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
     if (file) handleFile(file);
   };
 
-  // ---------- Clipboard path ----------
-
+  // Clipboard path
   const handleClipboardParse = () => {
     resetOutcome();
     if (!clipboardText.trim()) { setError('Kopyaladığınız mətn boşdur.'); return; }
@@ -180,11 +303,14 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
     const lines = clipboardText.split(/\r?\n/).filter((l) => l.trim() !== '');
     if (lines.length === 0) { setError('Kopyaladığınız mətn boşdur.'); return; }
 
+    // Detect delimiter
+    const delimiter = lines[0].includes('\t') ? '\t' : lines[0].includes(';') ? ';' : ',';
+
     let headerIdx = -1;
     let mapping = null;
     const scanLimit = Math.min(lines.length, 5);
     for (let i = 0; i < scanLimit; i++) {
-      const cells = lines[i].split('\t');
+      const cells = lines[i].split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
       const { colIndexToField, matchedFields } = detectColumnMapping(cells);
       if (matchedFields.size >= HEADER_MATCH_THRESHOLD && (!mapping || matchedFields.size > mapping.matchedFields.size)) {
         headerIdx = i; mapping = { colIndexToField, matchedFields };
@@ -193,21 +319,17 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
 
     let fellBack = false;
     if (!mapping) {
-      // No recognizable header text in the pasted content — fall back to the
-      // sheet's own canonical column order (№ then the 14 site fields) so a
-      // data-only paste still imports. The preview flags this so it can be
-      // double-checked before confirming.
       fellBack = true;
       const colIndexToField = new Map();
-      TARGET_FIELDS.forEach((f, i) => colIndexToField.set(i + 1, f));
+      TARGET_FIELDS.forEach((f, i) => colIndexToField.set(i, f));
       mapping = { colIndexToField, matchedFields: new Set(TARGET_FIELDS) };
       headerIdx = -1;
     }
 
     const records = [];
     for (let i = headerIdx + 1; i < lines.length; i++) {
-      const cells = lines[i].split('\t');
-      if (detectColumnMapping(cells).matchedFields.size >= HEADER_MATCH_THRESHOLD) continue; // stray repeated header
+      const cells = lines[i].split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
+      if (detectColumnMapping(cells).matchedFields.size >= HEADER_MATCH_THRESHOLD) continue;
       const rec = {};
       mapping.colIndexToField.forEach((field, idx) => {
         rec[field] = cells[idx] !== undefined ? cleanVal(cells[idx]) : '';
@@ -217,21 +339,20 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
 
     setUsedFallback(fellBack);
     setMissingCols(TARGET_FIELDS.filter((f) => !mapping.matchedFields.has(f)).map((f) => FIELD_LABELS[f]));
-    processParsed(records);
+    processParsed(records, existingRowsMapRef.current);
   };
 
-  // ---------- Shared ----------
-
+  // Confirm: pass ALL rows (new + changed) to parent for upsert
   const handleConfirm = () => {
-    const newRows = (previewRows || [])
-      .filter((r) => r.IS_NEW)
+    const toImport = (previewRows || [])
+      .filter((r) => r._STATUS === 'NEW' || r._STATUS === 'CHANGED')
       .map((r) => {
         const copy = { ...r };
-        delete copy.IS_NEW;
+        delete copy._STATUS;
         delete copy.EMPTY_FIELDS;
         return copy;
       });
-    onConfirm(newRows);
+    if (toImport.length > 0) onConfirm(toImport);
   };
 
   const goBack = () => {
@@ -264,8 +385,8 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
                 </button>
                 <button type="button" className="import-choice-card" onClick={() => { setSource('file'); setStep('file'); }}>
                   <span className="import-choice-icon"><DocIcon /></span>
-                  <span className="import-choice-title">Excel Document</span>
-                  <span className="import-choice-desc">.xlsx faylı yükləyin — yalnız "REGİSTR-2026" səhifəsi oxunacaq</span>
+                  <span className="import-choice-title">Fayl Yüklə</span>
+                  <span className="import-choice-desc">.xlsx, .csv və ya .txt faylı yükləyin və ya sürükləyin</span>
                 </button>
               </div>
             </div>
@@ -274,7 +395,7 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
           {step === 'clipboard' && (
             <div className="import-step">
               <p className="import-clipboard-hint">
-                Excel-də <b>REGİSTR-2026</b> səhifəsini açın, <b>Ctrl+A</b> ilə hamısını seçin, <b>Ctrl+C</b> edin və aşağıya yapışdırın.
+                Excel-də məlumatları seçin, <b>Ctrl+C</b> edin və aşağıya yapışdırın.
               </p>
               <textarea
                 className="import-clipboard-area"
@@ -301,12 +422,12 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
                 onDrop={(e) => { if (loading) { e.preventDefault(); return; } handleDrop(e); }}
               >
                 <div className="import-dropzone-icon"><DocIcon /></div>
-                <div className="import-dropzone-text">{loading ? 'Fayl analiz edilir...' : 'Excel faylı seçin və ya buraya sürükləyin'}</div>
-                <div className="import-dropzone-sub">.xlsx — yalnız "REGİSTR-2026" səhifəsi oxunacaq</div>
+                <div className="import-dropzone-text">{loading ? 'Fayl analiz edilir...' : 'Excel, CSV və ya TXT faylı seçin'}</div>
+                <div className="import-dropzone-sub">.xlsx, .csv, .txt — sürükləyin və ya klikləyin</div>
                 <input
                   ref={inputRef}
                   type="file"
-                  accept=".xlsx"
+                  accept=".xlsx,.csv,.txt"
                   style={{ display: 'none' }}
                   onChange={(e) => handleFile(e.target.files?.[0])}
                 />
@@ -319,12 +440,15 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
           {step === 'preview' && previewRows && (
             <>
               <div className="import-summary-stats">
-                <div className="import-stat import-stat-new"><b>{newCount}</b><span>yeni məlumat əlavə olunacaq</span></div>
-                {skippedCount > 0 && (
-                  <div className="import-stat import-stat-dup"><b>{skippedCount}</b><span>artıq mövcuddur (atlanacaq)</span></div>
+                <div className="import-stat import-stat-new"><b>{newCount}</b><span>yeni əlavə olunacaq</span></div>
+                {changedCount > 0 && (
+                  <div className="import-stat import-stat-changed"><b>{changedCount}</b><span>dəyişəcək</span></div>
+                )}
+                {unchangedCount > 0 && (
+                  <div className="import-stat import-stat-dup"><b>{unchangedCount}</b><span>dəyişiklik yoxdur</span></div>
                 )}
                 {emptyCount > 0 && (
-                  <div className="import-stat import-stat-warn"><b>{emptyCount}</b><span>sətirdə boş xana var</span></div>
+                  <div className="import-stat import-stat-warn"><b>{emptyCount}</b><span>boş xana var</span></div>
                 )}
               </div>
 
@@ -337,7 +461,7 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
               {usedFallback && (
                 <div className="import-note-warn">
                   <WarningIcon />
-                  <span>Sütun başlıqları tanınmadı — məlumatlar defolt sütun ardıcıllığı ilə oxundu. Nəticəni diqqətlə yoxlayın.</span>
+                  <span>Sütun başlıqları tanınmadı — məlumatlar defolt sütun ardıcıllığı ilə oxundu.</span>
                 </div>
               )}
 
@@ -358,17 +482,17 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
                       <tr><td colSpan={TARGET_FIELDS.length + 1} className="import-empty">Heç bir məlumat tapılmadı.</td></tr>
                     )}
                     {previewRows.map((r, i) => (
-                      <tr key={i}>
+                      <tr key={i} className={`import-row-${r._STATUS.toLowerCase()}`}>
                         <td>
-                          {r.IS_NEW
-                            ? <span className="import-badge-new">Yeni</span>
-                            : <span className="import-badge-new import-badge-existing">Mövcud</span>}
+                          {r._STATUS === 'NEW' && <span className="import-badge-new">Yeni</span>}
+                          {r._STATUS === 'CHANGED' && <span className="import-badge-changed">Dəyişəcək</span>}
+                          {r._STATUS === 'UNCHANGED' && <span className="import-badge-existing">Mövcud</span>}
                         </td>
                         {TARGET_FIELDS.map((f) => {
                           const val = r[f];
                           const isEmpty = !String(val || '').trim();
                           return (
-                            <td key={f} className={isEmpty ? 'import-cell-empty' : (r.IS_NEW ? 'import-colnew' : '')}>
+                            <td key={f} className={isEmpty ? 'import-cell-empty' : (r._STATUS === 'NEW' ? 'import-colnew' : '')}>
                               {isEmpty ? <span className="import-no-field">boş</span> : val}
                             </td>
                           );
@@ -389,8 +513,8 @@ export default function ImportExcelModal({ existingKeys, onConfirm, onCancel }) 
             <button className="btn-secondary" onClick={goBack}><ArrowLeftIcon /> Geri</button>
           )}
           {step === 'preview' && (
-            <button className="btn-primary" disabled={newCount === 0} onClick={handleConfirm}>
-              <CheckIcon /> Təsdiqlə ({newCount})
+            <button className="btn-primary" disabled={newCount + changedCount === 0} onClick={handleConfirm}>
+              <CheckIcon /> Təsdiqlə ({newCount + changedCount})
             </button>
           )}
         </div>
