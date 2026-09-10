@@ -1,18 +1,18 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
+import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
-import { ClientSideRowModelModule, TextEditorModule, CellStyleModule, RowApiModule, ValidationModule } from 'ag-grid-community';
+import { ClientSideRowModelModule } from 'ag-grid-community';
+import studentsData from '../data/registrData.json';
+import logoUrl from '../assets/ist-logo.png?url';
 import ContextMenu from './ContextMenu';
 import FilterPanel from './FilterPanel';
 import TrainingPlanModal from './TrainingPlanModal';
 import ImportExcelModal from './ImportExcelModal';
 import { getUniqueCourseGroups, generateTrainingPlan } from '../lib/excelGenerator';
-import { FIELD_LABELS, TARGET_FIELDS } from '../lib/importMapping';
-import useFirebaseData from '../lib/useFirebaseData';
-import logoUrl from '../assets/ist-logo.png?url';
+import { rowKey, FIELD_LABELS } from '../lib/importMapping';
 import {
   SearchIcon, CloseIcon, ResetFilterIcon, ImportIcon, WarningIcon,
-  UndoIcon, RedoIcon, PlusIcon, WifiOffIcon, WifiIcon,
 } from './Icons';
 
 function createEmptyRow(idx) {
@@ -24,13 +24,14 @@ function createEmptyRow(idx) {
   };
 }
 
-export default function SpreadsheetTable() {
-  const {
-    rows, setRows, loading, connected, lastSync,
-    canUndo, canRedo,
-    addRow, deleteRow, updateCell, importRows, undo, redo,
-  } = useFirebaseData();
+function getInitialState() {
+  const data = studentsData.map((r, i) => ({ ...r, _id: `reg-${i}` }));
+  for (let i = 0; i < 50; i++) data.push(createEmptyRow(i));
+  return data;
+}
 
+export default function SpreadsheetTable() {
+  const [rowData, setRowData] = useState(() => getInitialState());
   const [searchText, setSearchText] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
   const [menuState, setMenuState] = useState(null);
@@ -40,24 +41,12 @@ export default function SpreadsheetTable() {
   const [filteredForTemplate, setFilteredForTemplate] = useState([]);
   const [importOpen, setImportOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [toast, setToast] = useState(null);
   const gridRef = useRef(null);
   const touchTimer = useRef(null);
-  const currentRef = useRef(rows);
+  const currentRef = useRef(rowData);
 
-  useEffect(() => {
-    currentRef.current = rows;
-  }, [rows]);
-
-  // Toast helper
-  const showToast = useCallback((msg, type = 'info') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  // Filtered data
   const filteredData = useMemo(() => {
-    let data = rows;
+    let data = rowData;
     const af = Object.entries(columnFilters);
     if (af.length > 0) {
       data = data.filter(row =>
@@ -74,16 +63,15 @@ export default function SpreadsheetTable() {
       );
     }
     return data;
-  }, [rows, columnFilters, searchText]);
+  }, [rowData, columnFilters, searchText]);
 
-  // Cell value changed
   const onCellValueChanged = useCallback((event) => {
     const { data, colDef, newValue } = event;
     const field = colDef.field;
-    updateCell(data._id, field, newValue ?? '');
-  }, [updateCell]);
+    const newRows = currentRef.current.map(r => r._id === data._id ? { ...r, [field]: newValue ?? '' } : r);
+    currentRef.current = newRows; setRowData(newRows);
+  }, []);
 
-  // Context menu
   const onContextMenu = useCallback((e) => {
     e.preventDefault();
     const gridApi = gridRef.current?.api;
@@ -103,20 +91,22 @@ export default function SpreadsheetTable() {
     setMenuState({ x, y, rowIndex: rowIndex >= 0 ? rowIndex : currentRef.current.length - 1 });
   }, []);
 
-  // Touch support
   const handleTouchStart = useCallback((e) => {
     const touch = e.touches[0];
     touchTimer.current = setTimeout(() => setMenuState({ x: 80, y: touch.clientY || 100, rowIndex: 0 }), 600);
   }, []);
+
   const handleTouchEnd = useCallback(() => { if (touchTimer.current) clearTimeout(touchTimer.current); }, []);
 
-  // Row operations
   const insertRow = useCallback((position) => {
     if (!menuState) return;
-    addRow(position, menuState.rowIndex);
-    setMenuState(null);
-  }, [menuState, addRow]);
+    const empty = createEmptyRow(0);
+    const newRows = [...currentRef.current];
+    newRows.splice(position === 'above' ? menuState.rowIndex : menuState.rowIndex + 1, 0, empty);
+    currentRef.current = newRows; setRowData(newRows); setMenuState(null);
+  }, [menuState]);
 
+  // Open the delete confirmation dialog for a specific row index
   const requestDelete = useCallback((rowIndex) => {
     const api = gridRef.current?.api;
     let row = null;
@@ -131,68 +121,48 @@ export default function SpreadsheetTable() {
 
   const confirmDeleteRow = useCallback(() => {
     if (!confirmDelete) return;
-    deleteRow(confirmDelete.rowIndex);
-    setConfirmDelete(null);
-    showToast('Sətir silindi', 'info');
-  }, [confirmDelete, deleteRow, showToast]);
-
-  // Training plan
-  const handleTrainingPlan = useCallback(() => {
-    if (!menuState) return;
-    const gridApi = gridRef.current?.api;
-    if (!gridApi) return;
-    let row = null;
-    gridApi.forEachNode(n => { if (n.rowIndex === menuState.rowIndex && !row) row = n.data; });
-    if (!row || (!row.courseCode && !row.startDate)) {
-      showToast('Bu sətirdə kurs məlumatı yoxdur', 'info');
-      setMenuState(null);
-      return;
+    const newRows = [...currentRef.current];
+    if (confirmDelete.rowIndex >= 0 && confirmDelete.rowIndex < newRows.length) {
+      newRows.splice(confirmDelete.rowIndex, 1);
+      currentRef.current = newRows; setRowData(newRows);
     }
-    const data = currentRef.current;
-    const groups = getUniqueCourseGroups(data);
-    if (groups.length === 0) { setMenuState(null); return; }
-    setModalGroups(groups);
-    setFilteredForTemplate(data);
-    setModalOpen(true);
+    setConfirmDelete(null);
+  }, [confirmDelete]);
+
+  const handleTrainingPlan = useCallback(() => {
     setMenuState(null);
-  }, [menuState, showToast]);
+    const groups = getUniqueCourseGroups(filteredData);
+    if (groups.length === 0) { alert('Filtrlənmiş məlumatda kurs tapılmadı.'); return; }
+    setFilteredForTemplate(filteredData); setModalGroups(groups); setModalOpen(true);
+  }, [filteredData]);
 
   const handleConfirmTrainingPlan = useCallback(async (entries) => {
-    setModalOpen(false);
     try {
-      await generateTrainingPlan(filteredForTemplate, entries, logoUrl);
-      showToast('Training Plan yükləndi', 'info');
+      const resp = await fetch(logoUrl);
+      const logoBuffer = await resp.arrayBuffer();
+      await generateTrainingPlan(filteredForTemplate, entries, logoBuffer);
+      setModalOpen(false);
     } catch (err) {
-      console.error('Training plan error:', err);
-      showToast('Xəta baş verdi', 'info');
+      console.error('Training Plan xətası:', err);
+      alert('Training Plan yaradılmasında xəta baş verdi.');
     }
-  }, [filteredForTemplate, showToast]);
+  }, [filteredForTemplate]);
 
-  // Filter handling
-  const getSynchronizedValues = useCallback((field) => {
-    const vals = new Set();
-    rows.forEach(r => {
-      const v = String(r[field] || '').trim();
-      if (v) vals.add(v);
-    });
-    return Array.from(vals).sort();
-  }, [rows]);
-
-  const handleHeaderClick = useCallback((e) => {
-    const col = e.column;
-    if (!col) return;
-    const field = col.colDef?.field;
-    if (field) setActiveFilterColumn(field);
+  // Import: append only brand-new rows (dedup by key), preserving all existing data
+  const handleImportConfirm = useCallback((newRows) => {
+    if (!newRows || newRows.length === 0) return;
+    const existing = new Set(currentRef.current.map(r => rowKey(r)));
+    const added = newRows.filter(r => !existing.has(rowKey(r))).map((r, i) => ({ ...r, _id: `import-${Date.now()}-${i}` }));
+    if (added.length === 0) { setImportOpen(false); return; }
+    const merged = [...currentRef.current, ...added];
+    currentRef.current = merged; setRowData(merged);
+    setImportOpen(false);
   }, []);
 
-  const handleFilterApply = useCallback((field, selectedValues) => {
+  const handleFilterApply = useCallback((field, values) => {
     setColumnFilters(prev => {
       const next = { ...prev };
-      if (selectedValues.length === 0) {
-        delete next[field];
-      } else {
-        next[field] = selectedValues;
-      }
+      if (values && values.length > 0) next[field] = values; else delete next[field];
       return next;
     });
     setActiveFilterColumn(null);
@@ -200,123 +170,73 @@ export default function SpreadsheetTable() {
 
   const resetFilters = useCallback(() => {
     setColumnFilters({});
-    setSearchText('');
+    setActiveFilterColumn(null);
   }, []);
 
-  // Import confirm
-  const handleImportConfirm = useCallback((newRecords) => {
-    importRows(newRecords);
-    setImportOpen(false);
-    showToast(`${newRecords.length} yeni sətir əlavə edildi`, 'info');
-  }, [importRows, showToast]);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [undo, redo]);
-
-  // Column definitions
-  const sanitize = useCallback((v) => {
-    if (v === null || v === undefined) return '';
-    if (typeof v === 'object') {
-      if (v.richText && Array.isArray(v.richText)) return v.richText.map(rt => rt.text || '').join('');
-      if (v.text !== undefined) return String(v.text);
-      if (v instanceof Date && !isNaN(v.getTime())) {
-        const dd = String(v.getUTCDate()).padStart(2, '0');
-        const mm = String(v.getUTCMonth() + 1).padStart(2, '0');
-        return dd + '.' + mm + '.' + v.getUTCFullYear();
-      }
-      return '';
+  // Synchronized unique values: computed from data filtered by ALL OTHER columns
+  // (excluding the current field), so options cascade sequentially.
+  const getSynchronizedValues = useCallback((field) => {
+    const af = Object.entries(columnFilters).filter(([f]) => f !== field);
+    let data = rowData;
+    if (af.length > 0) {
+      data = data.filter(row =>
+        af.every(([f, vals]) => {
+          if (!vals || vals.length === 0) return true;
+          return vals.some(v => String(row[f] || '').toLowerCase().includes(v.toLowerCase()));
+        })
+      );
     }
-    const s = String(v);
-    return s.includes('[object Object]') ? '' : s;
+    const vals = new Set();
+    data.forEach(r => { const v = r[field]; if (v) vals.add(String(v)); });
+    return Array.from(vals).sort();
+  }, [rowData, columnFilters]);
+
+  // Clicking a column header opens the filter directly (no extra button)
+  const handleHeaderClick = useCallback((event) => {
+    const colId = event.column?.getColId?.();
+    if (colId) setActiveFilterColumn(colId);
   }, []);
+
+  const makeCol = (field, cfg = {}) => ({
+    field,
+    headerName: FIELD_LABELS[field],
+    editable: true,
+    ...cfg,
+  });
 
   const columnDefs = useMemo(() => [
-    ...TARGET_FIELDS.map(field => ({
-      headerName: FIELD_LABELS[field],
-      field,
-      editable: true,
-      width: field === 'fullName' ? 240 : field === 'phone' ? 160 : field === 'email' ? 210 : field === 'rank' ? 180 : field === 'fullNameId' ? 220 : 130,
-      minWidth: 90,
-      cellEditor: 'agTextCellEditor',
-      cellClass: 'editable-cell',
-      valueFormatter: (params) => sanitize(params.value),
-    })),
-  ], [sanitize]);
+    makeCol('fullName', { width: 260, minWidth: 150 }),
+    makeCol('serial', { width: 120, minWidth: 90 }),
+    makeCol('idNumber', { width: 130, minWidth: 100 }),
+    makeCol('birthDate', { width: 110, minWidth: 90 }),
+    makeCol('phone', { width: 175, minWidth: 120 }),
+    makeCol('email', { width: 260, minWidth: 180 }),
+    makeCol('rank', { width: 200, minWidth: 140 }),
+    makeCol('fullNameId', { width: 260, minWidth: 150 }),
+    makeCol('rank2', { width: 160, minWidth: 120 }),
+    makeCol('courseCode', { width: 110, minWidth: 80 }),
+    makeCol('startDate', { width: 130, minWidth: 100 }),
+    makeCol('finishDate', { width: 130, minWidth: 100 }),
+    makeCol('note', { width: 140, minWidth: 100 }),
+    makeCol('date', { width: 120, minWidth: 90 }),
+  ], []);
 
   const defaultColDef = useMemo(() => ({
-    sortable: true,
-    resizable: true,
-    filter: false,
-    suppressMovable: true,
-    floatingFilter: false,
+    sortable: false, resizable: true, filter: false, suppressMovable: true, suppressMenu: true,
   }), []);
-
-  // Loading screen
-  if (loading) {
-    return (
-      <div className="spreadsheet-root">
-        <div className="loading-screen">
-          <div className="loading-spinner" />
-          <div className="loading-text">Məlumatlar yüklənir...</div>
-          <div className="loading-sub">Firebase bağlantısı qurulur</div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="spreadsheet-root">
-      {/* Toolbar */}
       <div className="toolbar">
         <div className="toolbar-left">
-          <span className="row-count">{filteredData.length} / {rows.length} sətir</span>
-          <div className="toolbar-divider" />
-          <button
-            className={`btn-control ${canUndo ? '' : 'disabled'}`}
-            onClick={undo}
-            disabled={!canUndo}
-            title="Geri al (Ctrl+Z)"
-          >
-            <UndoIcon />
-          </button>
-          <button
-            className={`btn-control ${canRedo ? '' : 'disabled'}`}
-            onClick={redo}
-            disabled={!canRedo}
-            title="İrəli get (Ctrl+Y)"
-          >
-            <RedoIcon />
-          </button>
+          <span className="row-count">{filteredData.length} / {rowData.length} sətir</span>
         </div>
 
         <div className="toolbar-center">
           <div className="search-box">
             <span className="search-icon"><SearchIcon /></span>
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Axtar..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-            {searchText && (
-              <button className="search-clear" onClick={() => setSearchText('')} aria-label="Axtarışı təmizlə">
-                <CloseIcon />
-              </button>
-            )}
+            <input type="text" className="search-input" placeholder="Axtar..." value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+            {searchText && <button className="search-clear" onClick={() => setSearchText('')} aria-label="Axtarışı təmizlə"><CloseIcon /></button>}
           </div>
         </div>
 
@@ -333,21 +253,10 @@ export default function SpreadsheetTable() {
             <button className="btn-control import" onClick={() => setImportOpen(true)} title="Excel-dən yeni məlumat idxal et">
               <ImportIcon /> Import
             </button>
-            <button className="btn-control add-row" onClick={() => addRow('below', rows.length - 1)} title="Yeni sətir əlavə et">
-              <PlusIcon />
-            </button>
-          </div>
-          <div className="toolbar-divider" />
-          <div className="connection-status">
-            {connected
-              ? <span className="status-online"><WifiIcon /> Canlı</span>
-              : <span className="status-offline"><WifiOffIcon /> Kəsildi</span>
-            }
           </div>
         </div>
       </div>
 
-      {/* Active filter chips */}
       {Object.keys(columnFilters).length > 0 && (
         <div className="active-filters-bar">
           {Object.entries(columnFilters).map(([field, values]) => (
@@ -361,9 +270,7 @@ export default function SpreadsheetTable() {
         </div>
       )}
 
-      {/* AG Grid */}
-      <div
-        className={`ag-theme-quartz grid-wrap ${loading ? 'grid-loading' : ''}`}
+      <div className="ag-theme-quartz grid-wrap"
         onContextMenu={onContextMenu}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -374,26 +281,18 @@ export default function SpreadsheetTable() {
           rowData={filteredData}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
-          modules={[ClientSideRowModelModule, TextEditorModule, CellStyleModule, RowApiModule, ValidationModule]}
+          modules={[ClientSideRowModelModule]}
           enableCellTextSelection={true}
           rowHeight={40}
           headerHeight={44}
           suppressRowHoverHighlight={false}
-          singleClickEdit={false}
+          singleClickEdit={true}
           onCellValueChanged={onCellValueChanged}
+          onColumnHeaderClicked={handleHeaderClick}
           animateRows={false}
-          getRowId={params => params.data._id}
         />
       </div>
 
-      {/* Toast notification */}
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          {toast.msg}
-        </div>
-      )}
-
-      {/* Context Menu */}
       {menuState && (
         <ContextMenu
           x={menuState.x} y={menuState.y}
@@ -405,7 +304,6 @@ export default function SpreadsheetTable() {
         />
       )}
 
-      {/* Filter Panel */}
       {activeFilterColumn && (
         <FilterPanel
           field={activeFilterColumn}
@@ -417,7 +315,6 @@ export default function SpreadsheetTable() {
         />
       )}
 
-      {/* Delete Confirmation */}
       {confirmDelete && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
           <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
@@ -427,7 +324,7 @@ export default function SpreadsheetTable() {
               <div className="confirm-message">
                 {confirmDelete.name
                   ? `"${confirmDelete.name}" məlumatı silinəcək.`
-                  : 'Bu sətir tamamilə silinəcək.'}
+                  : 'Bu sətir tamamilə silinəcək.'} Bu əməliyyat geri qaytarıla bilməz.
               </div>
             </div>
             <div className="confirm-actions">
@@ -438,7 +335,6 @@ export default function SpreadsheetTable() {
         </div>
       )}
 
-      {/* Training Plan Modal */}
       {modalOpen && (
         <TrainingPlanModal
           groups={modalGroups}
@@ -447,11 +343,9 @@ export default function SpreadsheetTable() {
         />
       )}
 
-      {/* Import Modal */}
       {importOpen && (
         <ImportExcelModal
-          existingKeys={new Set(rows.map(r => [r.fullName, r.serial, r.idNumber, r.courseCode].map(v => String(v || '').trim().toLowerCase()).join('|')))}
-          existingRows={rows}
+          existingKeys={new Set(currentRef.current.map(r => rowKey(r)))}
           onConfirm={handleImportConfirm}
           onCancel={() => setImportOpen(false)}
         />
